@@ -758,3 +758,85 @@ root.render(<App/>);
 </script>
 </body>
 </html>
+-gray-300">{upd}</span>}{autoRef&&<span className="text-[8px] text-green-300 anim-pulse">🔄</span>}</div></div>
+            <div className="flex gap-1">
+              <button onClick={()=>setCalcMod(true)} className="bg-gray-700 px-2 py-1 rounded text-xs">🧮</button>
+              <button onClick={()=>{if(tab==='scan')scan();else if(tab==='fav')refreshFav();else if(tab==='port')refreshPort();else if(tab==='search')searchStock()}} disabled={load} className="bg-white text-purple-800 px-2 py-1 rounded font-bold text-sm disabled:opacity-50">{load?'⏳':'🔍'}</button>
+            </div>
+          </div>
+        </div>
+        
+        {err&&<div className="bg-red-900/50 rounded p-1.5 mb-2 text-red-300 text-xs">{err}</div>}
+        
+        <div className="flex gap-1 mb-2 overflow-x-auto scroll-hide text-[9px]">
+          {[{id:'scan',i:'🔍',l:'스크린'},{id:'fav',i:'⭐',l:`관심(${favs.length})`},{id:'port',i:'💼',l:'포트'},{id:'search',i:'🔎',l:'검색'},{id:'rank',i:'🏆',l:'랭킹'},{id:'report',i:'📋',l:'리포트'},{id:'alert',i:'🔔',l:'알림'},{id:'stat',i:'📊',l:'통계'},{id:'set',i:'⚙️',l:'설정'}].map(t=><button key={t.id} onClick={()=>{setTab(t.id);setList([]);setShowAI(null)}} className={`px-1.5 py-1 rounded font-bold whitespace-nowrap ${tab===t.id?'bg-blue-600':'bg-gray-800'}`}>{t.i}{t.l}</button>)}
+        </div>
+        
+        {tab==='scan'&&<>
+          <div className="flex gap-0.5 mb-1 flex-wrap">
+            {[['day','🔥데이'],['swing','📊스윙'],['bottom','🔥저점'],['bb','📊BB'],['pattern','📊패턴'],['ichi','☁️일목']].map(([m,l])=><button key={m} onClick={()=>setMode(m)} className={`px-2 py-1 rounded font-bold text-[9px] ${mode===m?'bg-blue-600':'bg-gray-800'}`}>{l}</button>)}
+          </div>
+          <div className="flex gap-1 mb-2">
+            {[['all','전체'],['low','🪙동전'],['mid','💵중가']].map(([p,l])=><button key={p} onClick={()=>setPrice(p)} className={`flex-1 py-1 rounded font-bold text-[9px] ${price===p?'bg-green-600':'bg-gray-800'}`}>{l}</button>)}
+          </div>
+        </>}
+        
+        {tab==='search'&&<div className="mb-2"><input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==='Enter'&&searchStock()} className="w-full bg-gray-800 rounded px-3 py-2 text-sm" placeholder="종목코드 6자리"/></div>}
+        
+        {tab==='rank'&&list.length>0&&<div className="mb-2 text-[10px]"><div className="font-bold mb-1">🏆 AI TOP5</div>{[...list].sort((a,b)=>(b.ai?.sc||0)-(a.ai?.sc||0)).slice(0,5).map((s,i)=><div key={s.code} className="flex justify-between bg-gray-800 rounded p-1 mb-0.5"><span>#{i+1} {s.name}</span><span className={s.ai?.sc>0?'text-green-400':'text-red-400'}>{s.ai?.sc}점</span></div>)}</div>}
+        
+        {tab==='report'&&list.length>0&&<ReportPanel/>}
+        
+        {tab==='alert'&&<div className="space-y-1.5 text-[10px]">
+          <div className="flex justify-between items-center p-2 bg-gray-800 rounded"><span>🔔알림</span><button onClick={()=>setAlertOn(!alertOn)} className={`w-10 h-5 rounded-full ${alertOn?'bg-green-500':'bg-gray-600'}`}><div className={`w-4 h-4 bg-white rounded-full transform ${alertOn?'translate-x-5':'translate-x-0.5'}`}/></button></div>
+          {alerts.map((a,i)=><div key={i} className="p-1.5 bg-gray-800 rounded flex justify-between"><div><b>{a.name}</b> {a.type} {fmtN(a.val)}</div><div className="flex gap-1"><button onClick={()=>togAlert(i)} className={`w-8 h-4 rounded-full ${a.on?'bg-green-500':'bg-gray-600'}`}><div className={`w-3 h-3 bg-white rounded-full ${a.on?'translate-x-4':'translate-x-0.5'}`}/></button><button onClick={()=>delAlert(i)} className="text-red-400">🗑</button></div></div>)}
+        </div>}
+        
+        {tab==='stat'&&<div className="bg-gray-800 rounded-lg p-2 mb-2 text-[10px]">
+          <div className="font-bold mb-1">📊 매매통계</div>
+          {(()=>{const st=getStats();return<div className="grid grid-cols-4 gap-1"><div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">거래</span><div>{st.total}</div></div><div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">승</span><div className="text-green-400">{st.wins}</div></div><div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">승률</span><div className={+st.rate>50?'text-green-400':'text-red-400'}>{st.rate}%</div></div><div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">수익</span><div className={st.pnl>=0?'text-green-400':'text-red-400'}>{fmtN(st.pnl)}</div></div></div>})()}
+        </div>}
+        
+        {tab==='set'&&<div className="space-y-1.5 text-[10px]">
+          <div className="flex justify-between items-center p-2 bg-gray-800 rounded"><span>{dark?'🌙다크':'☀️라이트'}</span><button onClick={()=>setDark(!dark)} className={`w-10 h-5 rounded-full ${dark?'bg-blue-500':'bg-yellow-500'}`}><div className={`w-4 h-4 bg-white rounded-full ${dark?'translate-x-5':'translate-x-0.5'}`}/></button></div>
+          <div className="flex justify-between items-center p-2 bg-gray-800 rounded"><span>🔄자동새로고침</span><button onClick={()=>setAutoRef(!autoRef)} className={`w-10 h-5 rounded-full ${autoRef?'bg-green-500':'bg-gray-600'}`}><div className={`w-4 h-4 bg-white rounded-full ${autoRef?'translate-x-5':'translate-x-0.5'}`}/></button></div>
+          {autoRef&&<div className="flex gap-1">{[30,60,120].map(s=><button key={s} onClick={()=>setRefInt(s)} className={`flex-1 py-1 rounded ${refInt===s?'bg-blue-600':'bg-gray-700'}`}>{s}초</button>)}</div>}
+          <div className="p-2 bg-gray-800 rounded">
+            <div className="mb-1">데이터: 관심{favs.length} 포트{port.length} 알림{alerts.length}</div>
+            <div className="flex gap-1">
+              <button onClick={()=>exportCSV(favs,'favs.csv')} className="flex-1 py-1 bg-blue-700 rounded">📤관심CSV</button>
+              <button onClick={()=>exportCSV(port,'port.csv')} className="flex-1 py-1 bg-blue-700 rounded">📤포트CSV</button>
+            </div>
+            <div className="flex gap-1 mt-1">
+              <button onClick={backup} className="flex-1 py-1 bg-green-700 rounded">💾백업</button>
+              <label className="flex-1 py-1 bg-green-700 rounded text-center cursor-pointer">📂복원<input type="file" accept=".json" onChange={restore} className="hidden"/></label>
+            </div>
+            <button onClick={()=>confirm('삭제?')&&(setFavs([]),setPort([]),setAlerts([]),setMemos({}),setTrades([]),localStorage.clear())} className="w-full mt-1 py-1 bg-red-600 rounded">🗑전체삭제</button>
+          </div>
+          <button onClick={logout} className="w-full py-2 bg-gray-700 rounded">🚪로그아웃</button>
+        </div>}
+        
+        <ComparePanel/>
+        <PortSum/>
+        
+        {list.length>0&&!load&&!['alert','set','stat','report'].includes(tab)&&<div>{list.map((s,i)=><Card key={s.code} s={s} i={i} rank={tab==='scan'||tab==='rank'} isPort={tab==='port'}/>)}</div>}
+        
+        {!list.length&&!load&&!['alert','set','stat','report'].includes(tab)&&<div className="text-center py-8"><div className="text-2xl mb-2">{tab==='scan'?'📈':'🔍'}</div><p className="text-gray-400 text-sm">🔍시작</p></div>}
+        
+        {load&&<div className="text-center py-8"><div className="text-2xl animate-bounce">🔍</div><p className="text-gray-400 text-xs mt-2">{prog}</p></div>}
+      </div>
+      
+      {modal==='port'&&<div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={()=>setModal(null)}><div className="bg-gray-800 rounded-xl p-3 w-full max-w-xs" onClick={e=>e.stopPropagation()}><h3 className="font-bold mb-2 text-sm">💼포트</h3><div className="text-xs mb-2">{form.name}</div><input type="number" value={form.buy} onChange={e=>setForm({...form,buy:e.target.value})} className="w-full bg-gray-700 rounded p-2 mb-2 text-sm" placeholder="매수가"/><input type="number" value={form.qty} onChange={e=>setForm({...form,qty:e.target.value})} className="w-full bg-gray-700 rounded p-2 mb-2 text-sm" placeholder="수량"/><div className="flex gap-2"><button onClick={()=>setModal(null)} className="flex-1 py-2 bg-gray-700 rounded">취소</button><button onClick={savePort} className="flex-1 py-2 bg-blue-600 rounded font-bold">저장</button></div></div></div>}
+      
+      {modal==='alert'&&<div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={()=>setModal(null)}><div className="bg-gray-800 rounded-xl p-3 w-full max-w-xs" onClick={e=>e.stopPropagation()}><h3 className="font-bold mb-2 text-sm">🔔알림</h3><div className="text-xs mb-2">{form.name}</div><select value={form.type} onChange={e=>setForm({...form,type:e.target.value})} className="w-full bg-gray-700 rounded p-2 mb-2 text-sm"><option value="target">목표가</option><option value="stop">손절가</option><option value="surge">급등%</option><option value="golden">골든크로스</option><option value="rsi30">RSI&lt;30</option></select><input type="number" value={form.val} onChange={e=>setForm({...form,val:e.target.value})} className="w-full bg-gray-700 rounded p-2 mb-2 text-sm" placeholder="값"/><div className="flex gap-2"><button onClick={()=>setModal(null)} className="flex-1 py-2 bg-gray-700 rounded">취소</button><button onClick={saveAlert} className="flex-1 py-2 bg-blue-600 rounded font-bold">저장</button></div></div></div>}
+      
+      <CalcModal/>
+    </div>
+  );
+};
+
+const root=ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App/>);
+</script>
+</body>
+</html>
