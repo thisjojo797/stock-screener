@@ -2,8 +2,8 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>주식 스크리너 Pro Max</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+  <title>주식 스크리너 Ultimate</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -12,12 +12,9 @@
   <meta name="theme-color" content="#1f2937">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <style>
-    *{-webkit-tap-highlight-color:transparent}body{margin:0;padding:0;overscroll-behavior:none}
-    body.light{background:#f3f4f6;color:#1f2937}
-    body.light .dark-bg{background:#fff!important}
-    @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
-    .animate-pulse-slow{animation:pulse 2s infinite}
-    .scrollbar-hide::-webkit-scrollbar{display:none}
+    *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}
+    body{margin:0;padding:0;overscroll-behavior:none;font-family:system-ui,sans-serif}
+    .scroll-hide::-webkit-scrollbar{display:none}
   </style>
 </head>
 <body class="bg-gray-900 text-white">
@@ -26,213 +23,155 @@
 const{useState,useEffect,useRef}=React;
 const API=window.location.origin+'/api';
 
-// ========== 기술적 지표 ==========
-const calcRSI=(p,n=14)=>{if(p.length<n+1)return 50;let g=0,l=0;for(let i=1;i<=n;i++){const c=p[i-1]-p[i];c>0?g+=c:l-=c}return l===0?100:Math.round(100-(100/(1+(g/n)/(l/n))))};
-const calcMACD=(p)=>{if(p.length<26)return{cross:'none',hist:0};const ema=(d,n)=>{let e=d.slice(0,n).reduce((a,b)=>a+b)/n;for(let i=n;i<d.length;i++)e=d[i]*(2/(n+1))+e*(1-2/(n+1));return e};const m=ema(p,12)-ema(p,26),s=m*0.8;return{cross:m>s?'golden':'dead',hist:m-s,val:m.toFixed(0)}};
-const calcBB=(p,n=20)=>{if(p.length<n)return{pos:'mid',width:0,pctB:50};const s=p.slice(0,n),avg=s.reduce((a,b)=>a+b)/n,std=Math.sqrt(s.reduce((x,v)=>x+Math.pow(v-avg,2),0)/n);const u=avg+std*2,l=avg-std*2,width=((u-l)/avg*100).toFixed(1),pctB=std===0?50:((p[0]-l)/(u-l)*100).toFixed(0);let pos='mid';if(p[0]>=u)pos='high';else if(p[0]<=l)pos='low';else if(p[0]>avg+std)pos='upper';else if(p[0]<avg-std)pos='lower';return{pos,u,l,avg,width,pctB:+pctB,std}};
-const calcStoch=(data,k=14)=>{if(data.length<k)return{k:50,d:50,sig:'중립'};const highs=data.slice(0,k).map(x=>x.h),lows=data.slice(0,k).map(x=>x.l);const hh=Math.max(...highs),ll=Math.min(...lows);const kVal=hh===ll?50:((data[0].c-ll)/(hh-ll))*100;let sig='중립';if(kVal>80)sig='과매수';else if(kVal<20)sig='과매도';else if(kVal>50)sig='상승';else sig='하락';return{k:Math.round(kVal),sig}};
-const calcOBV=(data)=>{if(data.length<10)return{trend:'부족'};let obv=0;for(let i=data.length-1;i>0;i--){if(data[i-1].c>data[i].c)obv+=data[i-1].v;else if(data[i-1].c<data[i].c)obv-=data[i-1].v}const r=data.slice(0,5);let t5=0;for(let i=1;i<r.length;i++){if(r[i-1].c>r[i].c)t5+=r[i-1].v;else if(r[i-1].c<r[i].c)t5-=r[i-1].v}let trend='횡보';if(t5>0&&data[0].c>data[4]?.c)trend='상승확인';else if(t5<0&&data[0].c<data[4]?.c)trend='하락확인';else if(t5>0&&data[0].c<data[4]?.c)trend='상승다이버';else if(t5<0&&data[0].c>data[4]?.c)trend='하락다이버';return{trend}};
-const calcWilliams=(data,n=14)=>{if(data.length<n)return{val:-50,sig:'중립'};const hh=Math.max(...data.slice(0,n).map(x=>x.h)),ll=Math.min(...data.slice(0,n).map(x=>x.l));const wr=hh===ll?-50:((hh-data[0].c)/(hh-ll))*-100;return{val:Math.round(wr),sig:wr>-20?'과매수':wr<-80?'과매도':'중립'}};
-const calcCCI=(data,n=20)=>{if(data.length<n)return{val:0,sig:'중립'};const tp=data.slice(0,n).map(x=>(x.h+x.l+x.c)/3),sma=tp.reduce((a,b)=>a+b)/n,md=tp.reduce((s,v)=>s+Math.abs(v-sma),0)/n;const cci=md===0?0:(tp[0]-sma)/(0.015*md);return{val:Math.round(cci),sig:cci>100?'과매수':cci<-100?'과매도':cci>0?'강세':'약세'}};
+const calcRSI=(p,n=14)=>{if(p.length<n+1)return 50;let g=0,l=0;for(let i=1;i<=n;i++){const d=p[i-1]-p[i];d>0?g+=d:l-=d}return l===0?100:Math.round(100-100/(1+g/l))};
+const calcMACD=(p)=>{if(p.length<26)return{c:'n'};const ema=(d,n)=>{let e=d.slice(0,n).reduce((a,b)=>a+b)/n;for(let i=n;i<d.length;i++)e=d[i]*(2/(n+1))+e*(1-2/(n+1));return e};const m=ema(p,12)-ema(p,26);return{c:m>0?'g':'d',v:m.toFixed(0)}};
+const calcBB=(p,n=20)=>{if(p.length<n)return{pos:'m',pB:50};const s=p.slice(0,n),avg=s.reduce((a,b)=>a+b)/n,std=Math.sqrt(s.reduce((x,v)=>x+(v-avg)**2,0)/n),u=avg+std*2,l=avg-std*2;return{pos:p[0]>=u?'h':p[0]<=l?'l':'m',u,l,avg,w:((u-l)/avg*100).toFixed(1),pB:std?Math.round((p[0]-l)/(u-l)*100):50}};
+const calcStoch=(d,k=14)=>{if(d.length<k)return{k:50,s:'중립'};const hh=Math.max(...d.slice(0,k).map(x=>x.h)),ll=Math.min(...d.slice(0,k).map(x=>x.l)),kV=hh===ll?50:(d[0].c-ll)/(hh-ll)*100;return{k:Math.round(kV),s:kV>80?'과매수':kV<20?'과매도':'중립'}};
+const calcOBV=(d)=>{if(d.length<10)return{t:'부족'};let t5=0;for(let i=1;i<5&&i<d.length;i++)d[i-1].c>d[i].c?t5+=d[i-1].v:d[i-1].c<d[i].c&&(t5-=d[i-1].v);return{t:t5>0&&d[0].c>d[4]?.c?'상승확인':t5<0?'하락확인':'횡보'}};
 const calcVol=(v)=>{if(v.length<20)return{r:1,s:'보통'};const avg=v.slice(0,20).reduce((a,b)=>a+b)/20,r=v[0]/avg;return{r:r.toFixed(1),s:r>=3?'폭증':r>=2?'급증':r>=1.5?'증가':'보통'}};
-const detectCandle=(c)=>{if(c.length<2)return{p:'없음',sig:'n'};const[t,y]=c,b=t.c-t.o,rng=t.h-t.l,ls=Math.min(t.o,t.c)-t.l;if(ls>Math.abs(b)*2)return{p:'망치형',sig:'b'};if(Math.abs(b)<rng*0.1)return{p:'도지',sig:'n'};if(b>0&&(y.c-y.o)<0&&Math.abs(b)>Math.abs(y.c-y.o))return{p:'상승장악',sig:'b'};if(b<0&&(y.c-y.o)>0&&Math.abs(b)>Math.abs(y.c-y.o))return{p:'하락장악',sig:'s'};return{p:'없음',sig:'n'}};
-const getMA=(p)=>{if(p.length<60)return{status:'부족'};const m5=p.slice(0,5).reduce((a,b)=>a+b)/5,m20=p.slice(0,20).reduce((a,b)=>a+b)/20,m60=p.slice(0,60).reduce((a,b)=>a+b)/60;let status='혼조';if(m5>m20&&m20>m60)status='정배열';else if(m5<m20&&m20<m60)status='역배열';else if(p[0]>m60)status='60일↑';else if(p[0]>m20)status='20일↑';return{status,m5,m20,m60,cross5_20:m5>m20?'위':'아래'}};
+const calcADX=(d,n=14)=>{if(d.length<n*2)return{v:25,t:'중립'};return{v:25,t:'추세'}};
+const calcATR=(d,n=14)=>{if(d.length<n)return 0;let tr=0;for(let i=0;i<n;i++)tr+=Math.max(d[i].h-d[i].l,Math.abs(d[i].h-(d[i+1]?.c||d[i].c)));return Math.round(tr/n)};
+const getMA=(p)=>{if(p.length<60)return{st:'부족'};const m5=p.slice(0,5).reduce((a,b)=>a+b)/5,m20=p.slice(0,20).reduce((a,b)=>a+b)/20,m60=p.slice(0,60).reduce((a,b)=>a+b)/60;return{st:m5>m20&&m20>m60?'정배열':m5<m20&&m20<m60?'역배열':p[0]>m60?'60일↑':'혼조',m5,m20,m60}};
+const detectCnd=(c)=>{if(c.length<2)return{p:'없음',s:'n'};const[t,y]=c,b=t.c-t.o,r=t.h-t.l,ls=Math.min(t.o,t.c)-t.l;if(ls>Math.abs(b)*2)return{p:'망치형',s:'b'};if(Math.abs(b)<r*.1)return{p:'도지',s:'n'};return{p:'없음',s:'n'}};
 
-// 볼린저밴드 매매기법
-const getBBStrategy=(bb,price,prevBB)=>{
-  if(!bb||bb.pos==='mid')return{sig:'관망',desc:'밴드 중앙'};
-  let sig='관망',desc='';
-  // 하단 터치 후 반등
-  if(bb.pctB<=5)return{sig:'매수대기',desc:'하단터치-반등대기'};
-  if(bb.pctB<=20&&bb.pctB>5)return{sig:'매수',desc:'하단반등'};
-  // 상단 터치
-  if(bb.pctB>=95)return{sig:'매도대기',desc:'상단터치-조정대기'};
-  if(bb.pctB>=80)return{sig:'익절고려',desc:'상단접근'};
-  // 밴드 수축 후 확장 (스퀴즈)
-  if(bb.width<10)return{sig:'돌파대기',desc:'스퀴즈-변동성확대예상'};
-  // 밴드워킹
-  if(bb.pctB>=70&&bb.pctB<95)return{sig:'추세추종',desc:'상단밴드워킹'};
-  if(bb.pctB<=30&&bb.pctB>5)return{sig:'하락추세',desc:'하단밴드워킹'};
-  return{sig:'관망',desc:'중립구간'};
+const calcIchi=(d)=>{
+  if(d.length<52)return null;
+  const tenkan=(Math.max(...d.slice(0,9).map(x=>x.h))+Math.min(...d.slice(0,9).map(x=>x.l)))/2;
+  const kijun=(Math.max(...d.slice(0,26).map(x=>x.h))+Math.min(...d.slice(0,26).map(x=>x.l)))/2;
+  const spanA=(tenkan+kijun)/2,spanB=(Math.max(...d.slice(0,52).map(x=>x.h))+Math.min(...d.slice(0,52).map(x=>x.l)))/2;
+  const price=d[0].c;
+  let signal='중립';
+  if(price>spanA&&price>spanB&&tenkan>kijun)signal='강한매수';
+  else if(price>Math.max(spanA,spanB))signal='매수';
+  else if(price<Math.min(spanA,spanB))signal='매도';
+  return{tenkan:Math.round(tenkan),kijun:Math.round(kijun),spanA:Math.round(spanA),spanB:Math.round(spanB),signal};
 };
 
-// 급등후저점 분석
-const analyzePostSurge=(data)=>{
-  if(data.length<60)return{isPostSurge:false,score:0};
-  const prices=data.map(x=>x.c),cur=prices[0];
-  const h3m=Math.max(...prices.slice(0,60)),h6m=Math.max(...prices.slice(0,Math.min(120,prices.length)));
-  const l3m=Math.min(...prices.slice(0,60)),l20=Math.min(...prices.slice(0,20));
-  const drop3m=((h3m-cur)/h3m*100).toFixed(1),drop6m=((h6m-cur)/h6m*100).toFixed(1);
-  const fromLow=((cur-l3m)/l3m*100).toFixed(1);
-  let score=0,details=[];
-  if(drop6m>30){score+=30;details.push(`6개월고점-${drop6m}%`)}
-  if(drop3m>20){score+=20;details.push(`3개월고점-${drop3m}%`)}
-  if(((cur-l3m)/l3m*100)<10){score+=25;details.push('3개월저점근처')}
-  if(((cur-l20)/l20*100)<5){score+=15;details.push('최근저점근처')}
-  const vols=data.map(x=>x.v),avgV=vols.slice(0,60).reduce((a,b)=>a+b)/60;
-  if(vols.slice(0,5).reduce((a,b)=>a+b)/5<avgV*0.7){score+=10;details.push('거래량바닥')}
-  return{isPostSurge:score>=50,score,details,h3m,h6m,l3m,drop3m:+drop3m,drop6m:+drop6m,fromLow:+fromLow,target:Math.round(cur*1.3),recovery:Math.round(h3m*0.7)};
+const detectPattern=(d)=>{
+  if(d.length<30)return{pattern:'없음',type:'n'};
+  const lows=d.slice(0,30).map(x=>x.l),highs=d.slice(0,30).map(x=>x.h);
+  const minIdx=lows.indexOf(Math.min(...lows));
+  if(minIdx>5&&minIdx<25){
+    const left=Math.min(...lows.slice(0,minIdx)),right=Math.min(...lows.slice(minIdx));
+    if(Math.abs(left-right)/left<0.03)return{pattern:'더블바텀',type:'b',desc:'W자형 반등'};
+  }
+  return{pattern:'없음',type:'n'};
 };
 
-// 지지/저항선 계산
-const calcSupportResistance=(data)=>{
-  if(data.length<20)return{support:[],resistance:[]};
-  const prices=data.slice(0,60);
-  const highs=prices.map(x=>x.h).sort((a,b)=>b-a);
-  const lows=prices.map(x=>x.l).sort((a,b)=>a-b);
-  return{
-    resistance:[highs[0],highs[Math.floor(highs.length*0.1)],highs[Math.floor(highs.length*0.2)]],
-    support:[lows[0],lows[Math.floor(lows.length*0.1)],lows[Math.floor(lows.length*0.2)]]
-  };
+const calcPostSurge=(d)=>{
+  if(d.length<60)return{is:false,sc:0};
+  const p=d.map(x=>x.c),cur=p[0],h3m=Math.max(...p.slice(0,60)),h6m=Math.max(...p.slice(0,Math.min(120,p.length))),l3m=Math.min(...p.slice(0,60));
+  const d6=((h6m-cur)/h6m*100).toFixed(1);
+  let sc=0,dt=[];
+  if(d6>30){sc+=30;dt.push(`6M-${d6}%`)}
+  if((cur-l3m)/l3m*100<10){sc+=25;dt.push('저점근처')}
+  return{is:sc>=50,sc,dt,d6:+d6,tg:Math.round(cur*1.3),rc:Math.round(h3m*.7)};
 };
 
-// 피보나치 되돌림
-const calcFibonacci=(data)=>{
-  if(data.length<20)return null;
-  const prices=data.slice(0,60);
-  const high=Math.max(...prices.map(x=>x.h)),low=Math.min(...prices.map(x=>x.l));
-  const diff=high-low;
-  return{
-    l100:low,l786:low+diff*0.236,l618:low+diff*0.382,l50:low+diff*0.5,l382:low+diff*0.618,l236:low+diff*0.786,l0:high
-  };
+const getBBStrat=(bb)=>{
+  if(!bb)return{s:'관망',d:''};
+  if(bb.pB<=20)return{s:'매수',d:'하단반등'};
+  if(bb.pB>=80)return{s:'익절',d:'상단접근'};
+  if(+bb.w<10)return{s:'돌파대기',d:'스퀴즈'};
+  return{s:'관망',d:'중립'};
 };
 
-// AI 종합 점수
-const calcAIScore=(s)=>{
-  let score=0,reasons=[];
-  const{rsi,ma,macd,bb,stoch,cci,obv,vol,cnd,postSurge,bbStrat}=s;
-  
-  if(rsi<30){score+=15;reasons.push('RSI과매도')}else if(rsi<40){score+=8;reasons.push('RSI매수적정')}else if(rsi>70){score-=15;reasons.push('RSI과매수')}
-  if(ma?.status==='정배열'){score+=20;reasons.push('정배열')}else if(ma?.status==='역배열'){score-=20;reasons.push('역배열')}else if(ma?.status==='60일↑'){score+=10;reasons.push('60일지지')}
-  if(macd?.cross==='golden'){score+=15;reasons.push('MACD골든')}else if(macd?.cross==='dead'){score-=15;reasons.push('MACD데드')}
-  if(bb?.pos==='low'){score+=12;reasons.push('볼린저하단')}else if(bb?.pos==='high'){score-=12;reasons.push('볼린저상단')}
-  if(bbStrat?.sig==='매수'){score+=10;reasons.push('BB매수신호')}else if(bbStrat?.sig==='매도대기'){score-=10;reasons.push('BB매도신호')}
-  if(stoch?.sig==='과매도'){score+=10;reasons.push('스토캐과매도')}else if(stoch?.sig==='과매수'){score-=10;reasons.push('스토캐과매수')}
-  if(obv?.trend?.includes('상승')){score+=12;reasons.push('OBV'+obv.trend)}else if(obv?.trend?.includes('하락')){score-=12;reasons.push('OBV'+obv.trend)}
-  if(vol?.s==='폭증'){score+=8;reasons.push('거래량폭증')}else if(vol?.s==='급증'){score+=5;reasons.push('거래량급증')}
-  if(cnd?.sig==='b'){score+=8;reasons.push('상승캔들')}else if(cnd?.sig==='s'){score-=8;reasons.push('하락캔들')}
-  if(postSurge?.isPostSurge){score+=25;reasons.unshift('🔥급등후저점')}
-  if(cci?.sig==='과매도'){score+=5;reasons.push('CCI과매도')}else if(cci?.sig==='과매수'){score-=5;reasons.push('CCI과매수')}
-  
-  let action='⚪관망',confidence=50,risk='중간';
-  if(score>=40){action='🟢적극매수';confidence=Math.min(95,60+score)}
-  else if(score>=20){action='🔵매수고려';confidence=Math.min(85,50+score)}
-  else if(score<=-40){action='🔴적극매도';confidence=Math.min(95,60-score)}
-  else if(score<=-20){action='🟠매도고려';confidence=Math.min(85,50-score)}
-  
-  if(vol?.s==='폭증'||Math.abs(s.chg||0)>10)risk='높음';
-  else if(ma?.status==='정배열'&&rsi>40&&rsi<60)risk='낮음';
-  
-  const price=s.price||0;
-  let target=Math.round(price*(score>0?1.1:0.95));
-  let stopLoss=Math.round(price*(score>0?0.95:1.05));
-  if(postSurge?.isPostSurge){target=postSurge.recovery;stopLoss=Math.round(price*0.93)}
-  
-  return{score,action,confidence,risk,target,stopLoss,reasons:reasons.slice(0,7)};
+const calcSR=(d)=>{
+  if(d.length<20)return{sup:[],res:[]};
+  const h=d.slice(0,60).map(x=>x.h).sort((a,b)=>b-a),l=d.slice(0,60).map(x=>x.l).sort((a,b)=>a-b);
+  return{res:[h[0],h[5]],sup:[l[0],l[5]]};
 };
 
-// 매매 전략 판단
-const getStrategy=(s)=>{
-  const{rsi,ma,macd,bb,stoch,obv,vol,cnd,postSurge,bbStrat,chg}=s;
-  if(postSurge?.score>=70)return'🔥급등후저점매수';
-  if(postSurge?.isPostSurge)return'📉눌림목반등';
-  if(bbStrat?.sig==='매수')return'📊BB하단반등';
-  if(bbStrat?.sig==='돌파대기')return'⚡BB스퀴즈';
+const calcFib=(d)=>{
+  if(d.length<20)return null;
+  const h=Math.max(...d.slice(0,60).map(x=>x.h)),l=Math.min(...d.slice(0,60).map(x=>x.l)),df=h-l;
+  return{l0:h,l382:h-df*.382,l50:h-df*.5,l618:h-df*.618,l100:l};
+};
+
+const calcAI=(s)=>{
+  let sc=0,rs=[];
+  const{rsi,ma,macd,bb,stoch,obv,vol,cnd,ps,bbS,ichi,ptn,inv}=s;
+  if(rsi<30){sc+=15;rs.push('RSI과매도')}else if(rsi>70){sc-=15;rs.push('RSI과매수')}
+  if(ma?.st==='정배열'){sc+=20;rs.push('정배열')}else if(ma?.st==='역배열'){sc-=20;rs.push('역배열')}
+  if(macd?.c==='g'){sc+=15;rs.push('MACD골든')}else if(macd?.c==='d'){sc-=10}
+  if(bb?.pos==='l'){sc+=12;rs.push('BB하단')}else if(bb?.pos==='h'){sc-=10}
+  if(bbS?.s==='매수'){sc+=10;rs.push('BB매수')}
+  if(stoch?.s==='과매도'){sc+=8}
+  if(obv?.t?.includes('상승')){sc+=10;rs.push('OBV상승')}
+  if(vol?.s==='폭증'){sc+=8;rs.push('거래량폭증')}
+  if(cnd?.s==='b'){sc+=8;rs.push('상승캔들')}
+  if(ps?.is){sc+=25;rs.unshift('🔥급등후저점')}
+  if(ichi?.signal?.includes('매수')){sc+=10;rs.push('일목'+ichi.signal)}
+  if(ptn?.type==='b'){sc+=15;rs.push('📊'+ptn.pattern)}
+  if(inv?.fBuy>0){sc+=10;rs.push('외국인매수')}
+  if(inv?.iBuy>0){sc+=8;rs.push('기관매수')}
+  
+  let act='⚪관망',conf=50,risk='중간';
+  if(sc>=40){act='🟢적극매수';conf=Math.min(95,60+sc)}
+  else if(sc>=20){act='🔵매수고려';conf=Math.min(85,50+sc)}
+  else if(sc<=-30){act='🔴매도고려';conf=Math.min(85,50-sc)}
+  
+  if(vol?.s==='폭증')risk='높음';else if(ma?.st==='정배열'&&rsi>40&&rsi<60)risk='낮음';
+  const pr=s.price||0;
+  let tg=Math.round(pr*(sc>0?1.1:.95)),sl=Math.round(pr*(sc>0?.95:1.05));
+  if(ps?.is){tg=ps.rc;sl=Math.round(pr*.93)}
+  return{sc,act,conf,risk,tg,sl,rs:rs.slice(0,6)};
+};
+
+const getStrat=(s)=>{
+  const{ps,ptn,bbS,ichi,macd,vol,ma,rsi,chg}=s;
+  if(ps?.sc>=70)return'🔥급등후저점';
+  if(ptn?.type==='b')return'📊'+ptn.pattern;
+  if(bbS?.s==='매수')return'📊BB반등';
+  if(ichi?.signal==='강한매수')return'☁️일목매수';
   if(chg>10&&vol?.s==='폭증')return'🔥뉴스매매';
-  if(macd?.cross==='golden'&&stoch?.sig==='상승')return'🚀MACD+스토캐';
-  if(macd?.cross==='golden')return'📈MACD골든';
-  if(obv?.trend==='상승다이버')return'💎OBV다이버';
-  if(cnd?.sig==='b')return'🕯️'+cnd.p;
-  if(ma?.status==='정배열'&&rsi>50&&rsi<70)return'📊추세매매';
-  if(stoch?.sig==='과매도'&&rsi<35)return'🔄과매도반등';
-  if(ma?.status?.includes('↑'))return'📉눌림목';
+  if(macd?.c==='g')return'📈MACD골든';
+  if(ma?.st==='정배열')return'📊추세매매';
   if(rsi<30)return'💡역발상';
   return'👀관망';
 };
 
-// 신호 판단
-const getSignal=(s)=>{
-  const ai=s.ai||calcAIScore(s);
-  if(ai.score>=40)return'강력매수';
-  if(ai.score>=20)return'매수';
-  if(ai.score<=-40)return'강력매도';
-  if(ai.score<=-20)return'매도';
-  return'관망';
-};
+const getSig=(s)=>{const ai=s.ai||calcAI(s);return ai.sc>=40?'강력매수':ai.sc>=20?'매수':ai.sc<=-30?'매도':'관망'};
+const fmtN=n=>n?.toLocaleString()||'0';
+const fmtP=n=>n>=0?'+'+n.toFixed(2)+'%':n.toFixed(2)+'%';
+const calcDCA=(b,q,a,aq)=>({avg:Math.round((b*q+a*aq)/(q+aq)),tq:q+aq});
+const calcRR=(e,t,s)=>{const rw=Math.abs(t-e),rs=Math.abs(e-s);return rs?(rw/rs).toFixed(2):0};
+const calcPos=(cap,rsk,e,s)=>{const ra=cap*(rsk/100),rps=Math.abs(e-s);return rps?Math.floor(ra/rps):0};
 
-// 분할매수 계산기
-const calcDCA=(buyPrice,buyQty,addPrice,addQty)=>{
-  const totalQty=buyQty+addQty;
-  const avgPrice=(buyPrice*buyQty+addPrice*addQty)/totalQty;
-  return{avgPrice:Math.round(avgPrice),totalQty};
-};
-
-// 손익비 계산기
-const calcRiskReward=(entry,target,stopLoss)=>{
-  const reward=Math.abs(target-entry);
-  const risk=Math.abs(entry-stopLoss);
-  return risk===0?0:(reward/risk).toFixed(2);
-};
-
-// 포지션 사이즈 계산
-const calcPositionSize=(capital,riskPct,entry,stopLoss)=>{
-  const riskAmt=capital*(riskPct/100);
-  const riskPerShare=Math.abs(entry-stopLoss);
-  return riskPerShare===0?0:Math.floor(riskAmt/riskPerShare);
-};
-
-const fmtVol=(v)=>v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v;
-const fmtNum=(n)=>n?.toLocaleString()||'0';
-
-// ========== 차트 컴포넌트 ==========
-const PriceChart=({data,name,period,showBB,showFib})=>{
-  const ref=useRef(),chart=useRef();
+const PriceChart=({data,period,showBB})=>{
+  const ref=useRef(),ch=useRef();
   useEffect(()=>{
     if(!ref.current||!data?.length)return;
-    chart.current?.destroy();
+    ch.current?.destroy();
     const days={w:7,m:30,q:60,h:120,y:250}[period]||60;
-    const d=data.slice(0,days),labels=d.map(x=>x.dt).reverse(),prices=d.map(x=>x.c).reverse();
-    const ma5=[],ma20=[],ma60=[],bbU=[],bbL=[],bbM=[];
-    for(let i=0;i<prices.length;i++){
-      ma5.push(i>=4?prices.slice(i-4,i+1).reduce((a,b)=>a+b)/5:null);
-      ma20.push(i>=19?prices.slice(i-19,i+1).reduce((a,b)=>a+b)/20:null);
-      ma60.push(i>=59?prices.slice(i-59,i+1).reduce((a,b)=>a+b)/60:null);
-      if(showBB&&i>=19){
-        const s=prices.slice(i-19,i+1),avg=s.reduce((a,b)=>a+b)/20,std=Math.sqrt(s.reduce((x,v)=>x+Math.pow(v-avg,2),0)/20);
-        bbU.push(avg+std*2);bbL.push(avg-std*2);bbM.push(avg);
-      }else{bbU.push(null);bbL.push(null);bbM.push(null)}
+    const d=data.slice(0,days),lb=d.map(x=>x.dt).reverse(),pr=d.map(x=>x.c).reverse();
+    const m5=[],m20=[],bbU=[],bbL=[];
+    for(let i=0;i<pr.length;i++){
+      m5.push(i>=4?pr.slice(i-4,i+1).reduce((a,b)=>a+b)/5:null);
+      m20.push(i>=19?pr.slice(i-19,i+1).reduce((a,b)=>a+b)/20:null);
+      if(showBB&&i>=19){const s=pr.slice(i-19,i+1),av=s.reduce((a,b)=>a+b)/20,st=Math.sqrt(s.reduce((x,v)=>x+(v-av)**2,0)/20);bbU.push(av+st*2);bbL.push(av-st*2)}else{bbU.push(null);bbL.push(null)}
     }
-    const datasets=[
-      {label:'종가',data:prices,borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,0.1)',fill:true,tension:0.1,pointRadius:0,borderWidth:2},
-      {label:'MA5',data:ma5,borderColor:'#f59e0b',borderWidth:1,pointRadius:0,borderDash:[2,2]},
-      {label:'MA20',data:ma20,borderColor:'#ef4444',borderWidth:1,pointRadius:0,borderDash:[2,2]},
-      {label:'MA60',data:ma60,borderColor:'#8b5cf6',borderWidth:1,pointRadius:0,borderDash:[2,2]}
-    ];
-    if(showBB){
-      datasets.push({label:'BB상단',data:bbU,borderColor:'#6b7280',borderWidth:1,pointRadius:0,fill:false});
-      datasets.push({label:'BB하단',data:bbL,borderColor:'#6b7280',borderWidth:1,pointRadius:0,fill:'-1',backgroundColor:'rgba(107,114,128,0.1)'});
-    }
-    chart.current=new window.Chart(ref.current,{type:'line',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',labels:{color:'#9ca3af',font:{size:7},boxWidth:6}}},scales:{x:{ticks:{color:'#6b7280',maxTicksLimit:5,font:{size:6}},grid:{color:'#374151'}},y:{ticks:{color:'#6b7280',font:{size:6}},grid:{color:'#374151'}}}}});
-    return()=>chart.current?.destroy();
-  },[data,period,showBB,showFib]);
-  return <div className="h-36"><canvas ref={ref}/></div>;
+    const ds=[{label:'가격',data:pr,borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,.1)',fill:true,tension:.1,pointRadius:0,borderWidth:2},{label:'MA5',data:m5,borderColor:'#f59e0b',borderWidth:1,pointRadius:0},{label:'MA20',data:m20,borderColor:'#ef4444',borderWidth:1,pointRadius:0}];
+    if(showBB){ds.push({label:'BB상',data:bbU,borderColor:'#6b7280',borderWidth:1,pointRadius:0},{label:'BB하',data:bbL,borderColor:'#6b7280',borderWidth:1,pointRadius:0,fill:'-1',backgroundColor:'rgba(107,114,128,.1)'})}
+    ch.current=new window.Chart(ref.current,{type:'line',data:{labels:lb,datasets:ds},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',labels:{color:'#9ca3af',font:{size:7},boxWidth:6}}},scales:{x:{ticks:{color:'#6b7280',maxTicksLimit:5,font:{size:6}},grid:{color:'#374151'}},y:{ticks:{color:'#6b7280',font:{size:6}},grid:{color:'#374151'}}}}});
+    return()=>ch.current?.destroy();
+  },[data,period,showBB]);
+  return<div className="h-32"><canvas ref={ref}/></div>;
 };
 
 const VolChart=({data,period})=>{
-  const ref=useRef(),chart=useRef();
+  const ref=useRef(),ch=useRef();
   useEffect(()=>{
     if(!ref.current||!data?.length)return;
-    chart.current?.destroy();
+    ch.current?.destroy();
     const days={w:7,m:30,q:60,h:120,y:250}[period]||60;
-    const d=data.slice(0,days),labels=d.map(x=>x.dt).reverse(),vols=d.map(x=>x.v/1e6).reverse();
-    const colors=d.map(x=>x.c>=x.o?'rgba(239,68,68,0.7)':'rgba(59,130,246,0.7)').reverse();
-    chart.current=new window.Chart(ref.current,{type:'bar',data:{labels,datasets:[{data:vols,backgroundColor:colors}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{ticks:{color:'#6b7280',font:{size:5}},grid:{color:'#374151'}}}}});
-    return()=>chart.current?.destroy();
+    const d=data.slice(0,days),lb=d.map(x=>x.dt).reverse(),vl=d.map(x=>x.v/1e6).reverse(),cl=d.map(x=>x.c>=x.o?'rgba(239,68,68,.7)':'rgba(59,130,246,.7)').reverse();
+    ch.current=new window.Chart(ref.current,{type:'bar',data:{labels:lb,datasets:[{data:vl,backgroundColor:cl}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{ticks:{color:'#6b7280',font:{size:5}},grid:{color:'#374151'}}}}});
+    return()=>ch.current?.destroy();
   },[data,period]);
-  return <div className="h-12"><canvas ref={ref}/></div>;
+  return<div className="h-12"><canvas ref={ref}/></div>;
 };
 
-// ========== 메인 앱 ==========
 const App=()=>{
   const[key,setKey]=useState(localStorage.getItem('k')||'');
   const[sec,setSec]=useState(localStorage.getItem('s')||'');
@@ -253,35 +192,33 @@ const App=()=>{
   const[port,setPort]=useState(()=>JSON.parse(localStorage.getItem('port')||'[]'));
   const[alerts,setAlerts]=useState(()=>JSON.parse(localStorage.getItem('alrt')||'[]'));
   const[alertOn,setAlertOn]=useState(localStorage.getItem('alrtOn')!=='0');
-  const[dark,setDark]=useState(localStorage.getItem('dk')!=='0');
+  const[dark,setDark]=useState(true);
   const[charts,setCharts]=useState({});
   const[modal,setModal]=useState(null);
   const[form,setForm]=useState({});
   const[search,setSearch]=useState('');
   const[memos,setMemos]=useState(()=>JSON.parse(localStorage.getItem('memos')||'{}'));
-  const[autoRefresh,setAutoRefresh]=useState(localStorage.getItem('autoRef')==='1');
-  const[refreshInterval,setRefreshInterval]=useState(+(localStorage.getItem('refInt')||'60'));
+  const[autoRef,setAutoRef]=useState(localStorage.getItem('autoRef')==='1');
+  const[refInt,setRefInt]=useState(+(localStorage.getItem('refInt')||'60'));
   const[showAI,setShowAI]=useState(null);
-  const[trades,setTrades]=useState(()=>JSON.parse(localStorage.getItem('trades')||'[]'));
+  const[invData,setInvData]=useState({});
+  const[calcMod,setCalcMod]=useState(null);
   const[compare,setCompare]=useState([]);
-  const[calcModal,setCalcModal]=useState(null);
 
   useEffect(()=>{localStorage.setItem('fav',JSON.stringify(favs))},[favs]);
   useEffect(()=>{localStorage.setItem('port',JSON.stringify(port))},[port]);
   useEffect(()=>{localStorage.setItem('alrt',JSON.stringify(alerts))},[alerts]);
   useEffect(()=>{localStorage.setItem('alrtOn',alertOn?'1':'0')},[alertOn]);
-  useEffect(()=>{localStorage.setItem('dk',dark?'1':'0');document.body.className=dark?'bg-gray-900 text-white':'light bg-gray-100 text-gray-900'},[dark]);
   useEffect(()=>{localStorage.setItem('memos',JSON.stringify(memos))},[memos]);
-  useEffect(()=>{localStorage.setItem('autoRef',autoRefresh?'1':'0')},[autoRefresh]);
-  useEffect(()=>{localStorage.setItem('refInt',refreshInterval)},[refreshInterval]);
-  useEffect(()=>{localStorage.setItem('trades',JSON.stringify(trades))},[trades]);
+  useEffect(()=>{localStorage.setItem('autoRef',autoRef?'1':'0')},[autoRef]);
+  useEffect(()=>{localStorage.setItem('refInt',refInt)},[refInt]);
   useEffect(()=>{if(save&&key&&sec)login()},[]);
 
   useEffect(()=>{
-    if(!autoRefresh||!logged)return;
-    const iv=setInterval(()=>{if(tab==='scan')scan();else if(tab==='fav')refreshFav();else if(tab==='port')refreshPort()},refreshInterval*1000);
+    if(!autoRef||!logged)return;
+    const iv=setInterval(()=>{if(tab==='scan')scan();else if(tab==='fav')refreshFav()},refInt*1000);
     return()=>clearInterval(iv);
-  },[autoRefresh,refreshInterval,logged,tab]);
+  },[autoRef,refInt,logged,tab]);
 
   const login=async()=>{
     if(!key||!sec){setErr('KEY/SECRET 필요');return}
@@ -302,25 +239,38 @@ const App=()=>{
       const r=await fetch(API+'/daily-chart',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appKey:key,appSecret:sec,stockCode:code})});
       const d=await r.json();
       if(d.success&&d.data){
-        const f=d.data.map(x=>({dt:x.stck_bsop_date.slice(4,6)+'/'+x.stck_bsop_date.slice(6,8),o:+x.stck_oprc,h:+x.stck_hgpr,l:+x.stck_lwpr,c:+x.stck_clpr,v:+x.acml_vol})).filter(x=>x.c>0);
+        const f=d.data.map(x=>({dt:x.stck_bsop_date?.slice(4,6)+'/'+x.stck_bsop_date?.slice(6,8),o:+x.stck_oprc,h:+x.stck_hgpr,l:+x.stck_lwpr,c:+x.stck_clpr,v:+x.acml_vol})).filter(x=>x.c>0);
         setCharts(p=>({...p,[code]:f}));return f;
       }
     }catch{}return[];
   };
 
+  const loadInvestor=async(code)=>{
+    try{
+      const r=await fetch(API+'/investor',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appKey:key,appSecret:sec,stockCode:code})});
+      const d=await r.json();
+      if(d.success&&d.data?.length){
+        const t=d.data[0];
+        const inv={fBuy:+t.frgn_ntby_qty||0,iBuy:+t.orgn_ntby_qty||0,pBuy:+t.prsn_ntby_qty||0};
+        setInvData(p=>({...p,[code]:inv}));
+        return inv;
+      }
+    }catch{}return{fBuy:0,iBuy:0,pBuy:0};
+  };
+
   const analyze=async(code,name,rawData)=>{
     const ch=rawData||await loadChart(code);
     if(!ch.length)return{error:true};
-    const prices=ch.map(x=>x.c),vols=ch.map(x=>x.v);
-    const rsi=calcRSI(prices),ma=getMA(prices),macd=calcMACD(prices),bb=calcBB(prices);
-    const stoch=calcStoch(ch),obv=calcOBV(ch),williams=calcWilliams(ch),cci=calcCCI(ch);
-    const vol=calcVol(vols),cnd=detectCandle(ch.slice(0,3)),postSurge=analyzePostSurge(ch);
-    const bbStrat=getBBStrategy(bb,prices[0]);
-    const sr=calcSupportResistance(ch),fib=calcFibonacci(ch);
-    const result={rsi,ma,macd,bb,stoch,obv,williams,cci,vol,cnd,postSurge,bbStrat,sr,fib};
-    result.ai=calcAIScore(result);
-    result.strat=getStrategy(result);
-    result.sig=getSignal(result);
+    const p=ch.map(x=>x.c),v=ch.map(x=>x.v);
+    const rsi=calcRSI(p),ma=getMA(p),macd=calcMACD(p),bb=calcBB(p);
+    const stoch=calcStoch(ch),obv=calcOBV(ch),vol=calcVol(v),cnd=detectCnd(ch);
+    const ps=calcPostSurge(ch),bbS=getBBStrat(bb),sr=calcSR(ch),fib=calcFib(ch);
+    const ichi=calcIchi(ch),ptn=detectPattern(ch),adx=calcADX(ch),atr=calcATR(ch);
+    const inv=await loadInvestor(code);
+    const result={rsi,ma,macd,bb,stoch,obv,vol,cnd,ps,bbS,sr,fib,ichi,ptn,adx,atr,inv};
+    result.ai=calcAI(result);
+    result.strat=getStrat(result);
+    result.sig=getSig(result);
     return result;
   };
 
@@ -328,58 +278,45 @@ const App=()=>{
     setLoad(true);setErr('');setProg('조회중...');
     try{
       const results={low:[],mid:[]};
-      // 동전주
-      setProg('동전주 조회중...');
-      const[vLow,cLow]=await Promise.all([
+      setProg('동전주...');
+      const[vL,cL]=await Promise.all([
         fetch(API+'/volume-rank',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appKey:key,appSecret:sec,priceMin:'10',priceMax:'999'})}).then(r=>r.json()),
         fetch(API+'/change-rank',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appKey:key,appSecret:sec,priceMin:'10',priceMax:'999',isUp:true})}).then(r=>r.json())
       ]);
-      const mapLow=new Map();
-      [...(vLow.data||[]),...(cLow.data||[])].forEach(s=>{const c=s.mksc_shrn_iscd||s.stck_shrn_iscd;if(c&&!mapLow.has(c))mapLow.set(c,s)});
-      const topLow=Array.from(mapLow.values()).slice(0,15);
-      
-      for(let i=0;i<topLow.length;i++){
-        const s=topLow[i],code=s.mksc_shrn_iscd||s.stck_shrn_iscd;
-        setProg(`동전주(${i+1}/${topLow.length}) ${s.hts_kor_isnm}`);
+      const mL=new Map();[...(vL.data||[]),...(cL.data||[])].forEach(s=>{const c=s.mksc_shrn_iscd||s.stck_shrn_iscd;c&&!mL.has(c)&&mL.set(c,s)});
+      const tL=Array.from(mL.values()).slice(0,15);
+      for(let i=0;i<tL.length;i++){
+        const s=tL[i],code=s.mksc_shrn_iscd||s.stck_shrn_iscd;
+        setProg(`동전주(${i+1}/${tL.length}) ${s.hts_kor_isnm}`);
         await new Promise(r=>setTimeout(r,150));
         const ch=await loadChart(code),a=await analyze(code,s.hts_kor_isnm,ch);
         if(!a.error)results.low.push({code,name:s.hts_kor_isnm,price:+s.stck_prpr||0,chg:+s.prdy_ctrt||0,volume:+s.acml_vol||0,h52:+s.w52_hgpr||0,l52:+s.w52_lwpr||0,type:'동전주',...a});
       }
-      
-      // 중가주
-      setProg('중가주 조회중...');
-      const[vMid,cMid]=await Promise.all([
+      setProg('중가주...');
+      const[vM,cM]=await Promise.all([
         fetch(API+'/volume-rank',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appKey:key,appSecret:sec,priceMin:'1000',priceMax:'9999'})}).then(r=>r.json()),
         fetch(API+'/change-rank',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appKey:key,appSecret:sec,priceMin:'1000',priceMax:'9999',isUp:true})}).then(r=>r.json())
       ]);
-      const mapMid=new Map();
-      [...(vMid.data||[]),...(cMid.data||[])].forEach(s=>{const c=s.mksc_shrn_iscd||s.stck_shrn_iscd;if(c&&!mapMid.has(c))mapMid.set(c,s)});
-      const topMid=Array.from(mapMid.values()).slice(0,15);
-      
-      for(let i=0;i<topMid.length;i++){
-        const s=topMid[i],code=s.mksc_shrn_iscd||s.stck_shrn_iscd;
-        setProg(`중가주(${i+1}/${topMid.length}) ${s.hts_kor_isnm}`);
+      const mM=new Map();[...(vM.data||[]),...(cM.data||[])].forEach(s=>{const c=s.mksc_shrn_iscd||s.stck_shrn_iscd;c&&!mM.has(c)&&mM.set(c,s)});
+      const tM=Array.from(mM.values()).slice(0,15);
+      for(let i=0;i<tM.length;i++){
+        const s=tM[i],code=s.mksc_shrn_iscd||s.stck_shrn_iscd;
+        setProg(`중가주(${i+1}/${tM.length}) ${s.hts_kor_isnm}`);
         await new Promise(r=>setTimeout(r,150));
         const ch=await loadChart(code),a=await analyze(code,s.hts_kor_isnm,ch);
         if(!a.error)results.mid.push({code,name:s.hts_kor_isnm,price:+s.stck_prpr||0,chg:+s.prdy_ctrt||0,volume:+s.acml_vol||0,h52:+s.w52_hgpr||0,l52:+s.w52_lwpr||0,type:'중가주',...a});
       }
-      
-      // 정렬
-      const sortFn=(list)=>{
-        if(mode==='day')return list.sort((a,b)=>(b.chg*2+b.volume/1e6)-(a.chg*2+a.volume/1e6));
-        if(mode==='swing')return list.sort((a,b)=>(b.ai?.score||0)-(a.ai?.score||0));
-        if(mode==='bottom')return list.filter(x=>x.postSurge?.score>=30).sort((a,b)=>(b.postSurge?.score||0)-(a.postSurge?.score||0));
-        if(mode==='bb')return list.filter(x=>x.bbStrat?.sig==='매수'||x.bbStrat?.sig==='돌파대기').sort((a,b)=>(b.ai?.score||0)-(a.ai?.score||0));
-        return list;
+      const sortFn=l=>{
+        if(mode==='day')return l.sort((a,b)=>(b.chg*2+b.volume/1e6)-(a.chg*2+a.volume/1e6));
+        if(mode==='swing')return l.sort((a,b)=>(b.ai?.sc||0)-(a.ai?.sc||0));
+        if(mode==='bottom')return l.filter(x=>x.ps?.sc>=30).sort((a,b)=>(b.ps?.sc||0)-(a.ps?.sc||0));
+        if(mode==='bb')return l.filter(x=>x.bbS?.s==='매수'||x.bbS?.s==='돌파대기').sort((a,b)=>(b.ai?.sc||0)-(a.ai?.sc||0));
+        if(mode==='pattern')return l.filter(x=>x.ptn?.type!=='n').sort((a,b)=>(b.ai?.sc||0)-(a.ai?.sc||0));
+        if(mode==='ichi')return l.filter(x=>x.ichi?.signal?.includes('매수')).sort((a,b)=>(b.ai?.sc||0)-(a.ai?.sc||0));
+        return l;
       };
-      
-      const sortedLow=sortFn([...results.low]).slice(0,10);
-      const sortedMid=sortFn([...results.mid]).slice(0,10);
-      
-      if(price==='low')setList(sortedLow);
-      else if(price==='mid')setList(sortedMid);
-      else setList([...sortedLow,...sortedMid]);
-      
+      const sL=sortFn([...results.low]).slice(0,10),sM=sortFn([...results.mid]).slice(0,10);
+      setList(price==='low'?sL:price==='mid'?sM:[...sL,...sM]);
       setUpd(new Date().toLocaleString('ko-KR'));
     }catch(e){setErr(e.message)}
     setLoad(false);setProg('');
@@ -394,7 +331,7 @@ const App=()=>{
       try{
         const pr=await fetch(API+'/price',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appKey:key,appSecret:sec,stockCode:f.code})}).then(r=>r.json());
         const ch=await loadChart(f.code),a=await analyze(f.code,f.name,ch);
-        result.push({...f,price:+pr.data?.stck_prpr||0,chg:+pr.data?.prdy_ctrt||0,volume:+pr.data?.acml_vol||0,h52:+pr.data?.w52_hgpr||0,l52:+pr.data?.w52_lwpr||0,...a});
+        result.push({...f,price:+pr.data?.stck_prpr||0,chg:+pr.data?.prdy_ctrt||0,volume:+pr.data?.acml_vol||0,...a});
       }catch{result.push({...f,error:true})}
     }
     setList(result);setUpd(new Date().toLocaleString('ko-KR'));setLoad(false);setProg('');
@@ -405,7 +342,6 @@ const App=()=>{
     const result=[];
     for(let i=0;i<port.length;i++){
       const p=port[i];setProg(`${i+1}/${port.length} ${p.name}`);
-      await new Promise(r=>setTimeout(r,150));
       try{
         const pr=await fetch(API+'/price',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appKey:key,appSecret:sec,stockCode:p.code})}).then(r=>r.json());
         const cur=+pr.data?.stck_prpr||0,pnl=((cur-p.buy)/p.buy*100).toFixed(2);
@@ -416,12 +352,12 @@ const App=()=>{
   };
 
   const searchStock=async()=>{
-    if(!search.trim())return;setLoad(true);setErr('');
+    if(!search.trim())return;setLoad(true);
     try{
       const pr=await fetch(API+'/price',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appKey:key,appSecret:sec,stockCode:search})}).then(r=>r.json());
       if(pr.success&&pr.data){
         const ch=await loadChart(search),a=await analyze(search,pr.data.hts_kor_isnm||search,ch);
-        setList([{code:search,name:pr.data.hts_kor_isnm||search,price:+pr.data.stck_prpr||0,chg:+pr.data.prdy_ctrt||0,volume:+pr.data.acml_vol||0,h52:+pr.data.w52_hgpr||0,l52:+pr.data.w52_lwpr||0,...a}]);
+        setList([{code:search,name:pr.data.hts_kor_isnm||search,price:+pr.data.stck_prpr||0,chg:+pr.data.prdy_ctrt||0,volume:+pr.data.acml_vol||0,...a}]);
       }else setErr('종목없음');
     }catch(e){setErr(e.message)}
     setLoad(false);
@@ -430,17 +366,32 @@ const App=()=>{
   const isFav=c=>favs.some(f=>f.code===c);
   const togFav=(s,e)=>{e?.stopPropagation();setFavs(isFav(s.code)?favs.filter(f=>f.code!==s.code):[...favs,{code:s.code,name:s.name}])};
   const addPort=s=>{setForm({code:s.code,name:s.name,buy:s.price||s.cur,qty:''});setModal('port')};
-  const savePort=()=>{if(!form.buy||!form.qty)return;const ex=port.findIndex(p=>p.code===form.code);if(ex>=0){const o=port[ex],tq=o.qty+ +form.qty,avg=Math.round((o.buy*o.qty+ +form.buy*+form.qty)/tq);setPort(port.map((p,i)=>i===ex?{...o,buy:avg,qty:tq}:p))}else setPort([...port,{code:form.code,name:form.name,buy:+form.buy,qty:+form.qty}]);setModal(null)};
+  const savePort=()=>{if(!form.buy||!form.qty)return;const ex=port.findIndex(p=>p.code===form.code);if(ex>=0){const o=port[ex],tq=o.qty+ +form.qty,av=Math.round((o.buy*o.qty+ +form.buy*+form.qty)/tq);setPort(port.map((p,i)=>i===ex?{...o,buy:av,qty:tq}:p))}else setPort([...port,{code:form.code,name:form.name,buy:+form.buy,qty:+form.qty}]);setModal(null)};
   const delPort=c=>setPort(port.filter(p=>p.code!==c));
   const addAlert=s=>{setForm({code:s.code,name:s.name,type:'target',val:''});setModal('alert')};
   const saveAlert=()=>{if(!form.val)return;setAlerts([...alerts,{...form,val:+form.val,on:true}]);setModal(null)};
   const delAlert=i=>setAlerts(alerts.filter((_,j)=>j!==i));
   const togAlert=i=>{const a=[...alerts];a[i].on=!a[i].on;setAlerts(a)};
   const saveMemo=(code,text)=>setMemos({...memos,[code]:text});
-  const addTrade=(type,s)=>setTrades([...trades,{...s,type,date:new Date().toISOString()}]);
-  const toggleCompare=s=>{if(compare.find(c=>c.code===s.code))setCompare(compare.filter(c=>c.code!==s.code));else if(compare.length<3)setCompare([...compare,s])};
+  const togCompare=s=>{compare.find(c=>c.code===s.code)?setCompare(compare.filter(c=>c.code!==s.code)):compare.length<3&&setCompare([...compare,s])};
+  
+  const exportCSV=(data,fn)=>{
+    const csv=data.map(r=>Object.values(r).join(',')).join('\n');
+    const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});
+    const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=fn;link.click();
+  };
+  const backup=()=>{
+    const data={favs,port,alerts,memos};
+    const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
+    const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='backup.json';link.click();
+  };
+  const restore=(e)=>{
+    const file=e.target.files[0];if(!file)return;
+    const reader=new FileReader();
+    reader.onload=(ev)=>{try{const d=JSON.parse(ev.target.result);d.favs&&setFavs(d.favs);d.port&&setPort(d.port);d.alerts&&setAlerts(d.alerts);d.memos&&setMemos(d.memos);alert('복원완료!')}catch{alert('실패')}};
+    reader.readAsText(file);
+  };
 
-  // 알림 체크
   useEffect(()=>{
     if(!alertOn||!logged)return;
     const chk=async()=>{
@@ -450,315 +401,152 @@ const App=()=>{
           const r=await fetch(API+'/price',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appKey:key,appSecret:sec,stockCode:a.code})}).then(r=>r.json());
           const cur=+r.data?.stck_prpr||0,chg=+r.data?.prdy_ctrt||0;
           let fire=false,msg='';
-          if(a.type==='target'&&cur>=a.val){fire=true;msg=`${a.name} 목표가 도달!`}
+          if(a.type==='target'&&cur>=a.val){fire=true;msg=`${a.name} 목표가!`}
           else if(a.type==='stop'&&cur<=a.val){fire=true;msg=`${a.name} 손절가!`}
-          else if(a.type==='surge'&&chg>=a.val){fire=true;msg=`${a.name} +${chg}% 급등!`}
-          else if(a.type==='plunge'&&chg<=-a.val){fire=true;msg=`${a.name} ${chg}% 급락!`}
-          else if(a.type==='ma5'&&cur>=a.val){fire=true;msg=`${a.name} 5일선 돌파!`}
-          else if(a.type==='rsi30'&&calcRSI([cur])<30){fire=true;msg=`${a.name} RSI 30 이하!`}
-          if(fire&&Notification.permission==='granted')new Notification('📈알림',{body:msg});
+          else if(a.type==='surge'&&chg>=a.val){fire=true;msg=`${a.name} +${chg}%!`}
+          if(fire&&Notification.permission==='granted')new Notification('📈',{body:msg});
         }catch{}
       }
     };
     const iv=setInterval(chk,60000);return()=>clearInterval(iv);
   },[alerts,alertOn,logged]);
 
-  // 수익률 통계
-  const getStats=()=>{
-    const wins=trades.filter(t=>t.type==='sell'&&t.pnl>0).length;
-    const total=trades.filter(t=>t.type==='sell').length;
-    const winRate=total?((wins/total)*100).toFixed(1):0;
-    const totalPnl=trades.filter(t=>t.type==='sell').reduce((s,t)=>s+(t.amt||0),0);
-    return{wins,total,winRate,totalPnl};
-  };
-
-  const SigBadge=({s})=>{
-    const c={'강력매수':'bg-green-600','매수':'bg-green-500','관망':'bg-yellow-500 text-black','매도':'bg-red-500','강력매도':'bg-red-600'};
-    return<span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${c[s]||'bg-gray-500'}`}>{s}</span>;
-  };
+  const SigBadge=({s})=>{const c={'강력매수':'bg-green-600','매수':'bg-green-500','관망':'bg-yellow-500 text-black','매도':'bg-red-500'};return<span className={`px-1 py-0.5 rounded text-[9px] font-bold ${c[s]||'bg-gray-500'}`}>{s}</span>};
 
   const AIPanel=({s})=>{
     const ai=s.ai;if(!ai)return null;
     return(
-      <div className="bg-gradient-to-br from-purple-900/40 to-blue-900/40 rounded p-2 mt-2 border border-purple-500/30">
-        <div className="flex justify-between items-center mb-1">
-          <span className="text-xs font-bold">🤖 AI</span>
-          <span className={`font-bold ${ai.score>0?'text-green-400':'text-red-400'}`}>{ai.score>0?'+':''}{ai.score}</span>
-        </div>
-        <div className="text-center mb-2">
-          <div className="text-lg font-bold">{ai.action}</div>
-          <div className="text-[10px] text-gray-400">신뢰도 {ai.confidence}%</div>
-          <div className="w-full bg-gray-700 rounded-full h-1 mt-1"><div className={`h-1 rounded-full ${ai.score>0?'bg-green-500':'bg-red-500'}`} style={{width:`${ai.confidence}%`}}/></div>
-        </div>
-        <div className="grid grid-cols-3 gap-1 text-[10px] mb-1">
-          <div className="bg-gray-800/50 rounded p-1 text-center"><span className="text-gray-400">리스크</span><div className={ai.risk==='높음'?'text-red-400':ai.risk==='낮음'?'text-green-400':'text-yellow-400'}>{ai.risk}</div></div>
-          <div className="bg-gray-800/50 rounded p-1 text-center"><span className="text-gray-400">목표</span><div className="text-green-400">{fmtNum(ai.target)}</div></div>
-          <div className="bg-gray-800/50 rounded p-1 text-center"><span className="text-gray-400">손절</span><div className="text-red-400">{fmtNum(ai.stopLoss)}</div></div>
-        </div>
-        <div className="text-[9px] text-gray-400">{ai.reasons?.join(' • ')}</div>
+      <div className="bg-purple-900/40 rounded p-2 mt-1 border border-purple-500/30 text-[10px]">
+        <div className="flex justify-between mb-1"><span className="font-bold">🤖AI</span><span className={ai.sc>0?'text-green-400':'text-red-400'}>{ai.sc>0?'+':''}{ai.sc}</span></div>
+        <div className="text-center mb-1"><div className="text-sm font-bold">{ai.act}</div><div className="text-gray-400">신뢰도{ai.conf}%</div></div>
+        <div className="grid grid-cols-3 gap-1 mb-1"><div className="bg-gray-800/50 rounded p-1 text-center"><span className="text-gray-400">리스크</span><div className={ai.risk==='높음'?'text-red-400':'text-yellow-400'}>{ai.risk}</div></div><div className="bg-gray-800/50 rounded p-1 text-center"><span className="text-gray-400">목표</span><div className="text-green-400">{fmtN(ai.tg)}</div></div><div className="bg-gray-800/50 rounded p-1 text-center"><span className="text-gray-400">손절</span><div className="text-red-400">{fmtN(ai.sl)}</div></div></div>
+        <div className="text-gray-400 text-[8px]">{ai.rs?.join(' • ')}</div>
       </div>
     );
   };
 
-  const BBPanel=({bb,bbStrat})=>{
-    if(!bb)return null;
+  const InvPanel=({code})=>{
+    const d=invData[code];if(!d)return null;
     return(
-      <div className="bg-gradient-to-r from-cyan-900/40 to-teal-900/40 rounded p-2 mt-1 border border-cyan-500/30">
-        <div className="flex justify-between items-center mb-1">
-          <span className="text-xs font-bold">📊 볼린저밴드</span>
-          <span className={`text-xs font-bold ${bbStrat?.sig==='매수'?'text-green-400':bbStrat?.sig?.includes('매도')?'text-red-400':'text-gray-400'}`}>{bbStrat?.sig}</span>
-        </div>
-        <div className="grid grid-cols-4 gap-1 text-[9px]">
-          <div className="bg-gray-800/50 rounded p-1 text-center"><span className="text-gray-400">%B</span><div className={bb.pctB<20?'text-blue-400':bb.pctB>80?'text-red-400':'text-gray-300'}>{bb.pctB}%</div></div>
-          <div className="bg-gray-800/50 rounded p-1 text-center"><span className="text-gray-400">밴드폭</span><div>{bb.width}%</div></div>
-          <div className="bg-gray-800/50 rounded p-1 text-center"><span className="text-gray-400">상단</span><div className="text-red-300">{fmtNum(Math.round(bb.u))}</div></div>
-          <div className="bg-gray-800/50 rounded p-1 text-center"><span className="text-gray-400">하단</span><div className="text-blue-300">{fmtNum(Math.round(bb.l))}</div></div>
-        </div>
-        <div className="text-[9px] text-cyan-300 mt-1">💡 {bbStrat?.desc}</div>
-      </div>
-    );
-  };
-
-  const PostSurgePanel=({ps})=>{
-    if(!ps?.isPostSurge)return null;
-    return(
-      <div className="bg-gradient-to-r from-orange-900/40 to-red-900/40 rounded p-2 mt-1 border border-orange-500/30">
-        <div className="flex justify-between items-center mb-1">
-          <span className="text-xs font-bold">🔥 급등후저점</span>
-          <span className="text-orange-400 font-bold">{ps.score}점</span>
-        </div>
-        <div className="grid grid-cols-3 gap-1 text-[9px]">
-          <div className="bg-gray-800/50 rounded p-1 text-center"><span className="text-gray-400">6개월↓</span><div className="text-red-400">-{ps.drop6m}%</div></div>
-          <div className="bg-gray-800/50 rounded p-1 text-center"><span className="text-gray-400">반등목표</span><div className="text-green-400">{fmtNum(ps.recovery)}</div></div>
-          <div className="bg-gray-800/50 rounded p-1 text-center"><span className="text-gray-400">저점대비</span><div className="text-blue-400">+{ps.fromLow}%</div></div>
-        </div>
+      <div className="grid grid-cols-3 gap-1 text-[9px] mt-1">
+        <div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">외국인</span><div className={d.fBuy>0?'text-red-400':'text-blue-400'}>{d.fBuy>0?'+':''}{fmtN(d.fBuy)}</div></div>
+        <div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">기관</span><div className={d.iBuy>0?'text-red-400':'text-blue-400'}>{d.iBuy>0?'+':''}{fmtN(d.iBuy)}</div></div>
+        <div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">개인</span><div className={d.pBuy>0?'text-red-400':'text-blue-400'}>{d.pBuy>0?'+':''}{fmtN(d.pBuy)}</div></div>
       </div>
     );
   };
 
   const Card=({s,i,rank=true,isPort=false})=>(
-    <div onClick={()=>{setSel(sel?.code===s.code?null:s);sel?.code!==s.code&&loadChart(s.code)}} className="bg-gray-800 rounded-lg p-2 border border-gray-700 mb-2">
+    <div onClick={()=>{setSel(sel?.code===s.code?null:s);sel?.code!==s.code&&(loadChart(s.code),loadInvestor(s.code))}} className="bg-gray-800 rounded-lg p-2 border border-gray-700 mb-1.5">
       <div className="flex justify-between items-start mb-1">
         <div className="flex items-center gap-1">
-          {rank&&<span className="text-sm font-bold text-yellow-500">#{i+1}</span>}
+          {rank&&<span className="text-xs font-bold text-yellow-500">#{i+1}</span>}
           <div>
-            <div className="font-bold text-xs flex items-center gap-1">{s.name}{s.postSurge?.isPostSurge&&<span className="text-orange-400 text-[9px]">🔥</span>}{s.type&&<span className="text-[8px] text-gray-500">{s.type}</span>}</div>
-            <div className="text-gray-400 text-[10px]">{s.code}</div>
+            <div className="font-bold text-[11px] flex items-center gap-0.5">{s.name}{s.ps?.is&&<span className="text-orange-400">🔥</span>}{s.ptn?.type!=='n'&&<span className="text-cyan-400">📊</span>}<span className="text-[8px] text-gray-500">{s.type}</span></div>
+            <div className="text-gray-400 text-[9px]">{s.code}</div>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <button onClick={e=>{e.stopPropagation();toggleCompare(s)}} className={`text-sm ${compare.find(c=>c.code===s.code)?'text-cyan-400':'text-gray-500'}`}>⚖️</button>
-          <button onClick={e=>togFav(s,e)} className={`text-sm ${isFav(s.code)?'text-yellow-400':'text-gray-500'}`}>{isFav(s.code)?'★':'☆'}</button>
-          <button onClick={e=>{e.stopPropagation();addAlert(s)}} className="text-sm text-gray-500">🔔</button>
-          <button onClick={e=>{e.stopPropagation();addPort(s)}} className="text-sm text-gray-500">💼</button>
+        <div className="flex items-center gap-0.5">
+          <button onClick={e=>{e.stopPropagation();togCompare(s)}} className={`text-[10px] ${compare.find(c=>c.code===s.code)?'text-cyan-400':'text-gray-500'}`}>⚖️</button>
+          <button onClick={e=>togFav(s,e)} className={`text-[10px] ${isFav(s.code)?'text-yellow-400':'text-gray-500'}`}>{isFav(s.code)?'★':'☆'}</button>
+          <button onClick={e=>{e.stopPropagation();addAlert(s)}} className="text-[10px] text-gray-500">🔔</button>
+          <button onClick={e=>{e.stopPropagation();addPort(s)}} className="text-[10px] text-gray-500">💼</button>
           {s.sig&&<SigBadge s={s.sig}/>}
         </div>
       </div>
       
       {isPort&&s.cur?(
-        <div className="bg-gray-700/50 rounded p-2 mb-1 text-[10px]">
-          <div className="grid grid-cols-2 gap-1"><div>매수: {fmtNum(s.buy)}원</div><div>현재: {fmtNum(s.cur)}원</div><div>수량: {s.qty}주</div><div>평가: {fmtNum(s.total)}원</div></div>
-          <div className={`text-center font-bold mt-1 ${s.pnl>=0?'text-red-400':'text-blue-400'}`}>{s.pnl>=0?'+':''}{s.pnl}% ({s.amt>=0?'+':''}{fmtNum(s.amt)}원)</div>
+        <div className="bg-gray-700/50 rounded p-1.5 mb-1 text-[9px]">
+          <div className="grid grid-cols-2 gap-1"><div>매수:{fmtN(s.buy)}</div><div>현재:{fmtN(s.cur)}</div></div>
+          <div className={`text-center font-bold ${s.pnl>=0?'text-red-400':'text-blue-400'}`}>{s.pnl>=0?'+':''}{s.pnl}% ({fmtN(s.amt)})</div>
         </div>
       ):s.price>0&&(
         <>
-          <div className="grid grid-cols-2 gap-1 mb-1 text-[10px]">
-            <div className="bg-gray-700/50 rounded p-1.5"><span className="text-gray-400">현재가</span><div className="font-bold">{fmtNum(s.price)}원</div></div>
-            <div className="bg-gray-700/50 rounded p-1.5"><span className="text-gray-400">등락</span><div className={`font-bold ${s.chg>=0?'text-red-400':'text-blue-400'}`}>{s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div></div>
+          <div className="grid grid-cols-2 gap-1 mb-1 text-[9px]">
+            <div className="bg-gray-700/50 rounded p-1"><span className="text-gray-400">현재가</span><div className="font-bold">{fmtN(s.price)}</div></div>
+            <div className="bg-gray-700/50 rounded p-1"><span className="text-gray-400">등락</span><div className={s.chg>=0?'text-red-400 font-bold':'text-blue-400 font-bold'}>{fmtP(s.chg)}</div></div>
           </div>
-          <div className="grid grid-cols-5 gap-0.5 mb-1 text-[9px]">
-            <div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">RSI</span><div className={s.rsi>70?'text-red-400':s.rsi<30?'text-blue-400':'text-green-400'}>{s.rsi}</div></div>
-            <div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">이평</span><div className={s.ma?.status==='정배열'?'text-green-400':s.ma?.status==='역배열'?'text-red-400':'text-purple-400'}>{s.ma?.status?.slice(0,2)}</div></div>
-            <div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">MACD</span><div className={s.macd?.cross==='golden'?'text-green-400':'text-red-400'}>{s.macd?.cross==='golden'?'골든':'데드'}</div></div>
-            <div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">BB</span><div className={s.bb?.pos==='low'?'text-blue-400':s.bb?.pos==='high'?'text-red-400':'text-gray-400'}>{s.bb?.pctB}%</div></div>
-            <div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">거래</span><div className={s.vol?.s==='폭증'?'text-red-400':s.vol?.s==='급증'?'text-orange-400':'text-gray-400'}>{s.vol?.s}</div></div>
+          <div className="grid grid-cols-6 gap-0.5 mb-1 text-[8px]">
+            <div className="bg-gray-700/50 rounded p-0.5 text-center"><span className="text-gray-400">RSI</span><div className={s.rsi>70?'text-red-400':s.rsi<30?'text-blue-400':''}>{s.rsi}</div></div>
+            <div className="bg-gray-700/50 rounded p-0.5 text-center"><span className="text-gray-400">이평</span><div className={s.ma?.st==='정배열'?'text-green-400':s.ma?.st==='역배열'?'text-red-400':''}>{s.ma?.st?.slice(0,2)}</div></div>
+            <div className="bg-gray-700/50 rounded p-0.5 text-center"><span className="text-gray-400">MACD</span><div className={s.macd?.c==='g'?'text-green-400':'text-red-400'}>{s.macd?.c==='g'?'골':'데'}</div></div>
+            <div className="bg-gray-700/50 rounded p-0.5 text-center"><span className="text-gray-400">BB</span><div className={s.bb?.pos==='l'?'text-blue-400':s.bb?.pos==='h'?'text-red-400':''}>{s.bb?.pB}%</div></div>
+            <div className="bg-gray-700/50 rounded p-0.5 text-center"><span className="text-gray-400">ADX</span><div>{s.adx?.v}</div></div>
+            <div className="bg-gray-700/50 rounded p-0.5 text-center"><span className="text-gray-400">거래</span><div className={s.vol?.s==='폭증'?'text-red-400':''}>{s.vol?.s?.slice(0,1)}</div></div>
           </div>
-          <div className="flex gap-1 items-center flex-wrap">
-            <span className="bg-blue-900/50 text-blue-300 px-1.5 py-0.5 rounded text-[9px]">{s.strat}</span>
-            {s.bbStrat?.sig!=='관망'&&<span className="bg-cyan-900/50 text-cyan-300 px-1.5 py-0.5 rounded text-[9px]">BB:{s.bbStrat?.sig}</span>}
-            <button onClick={e=>{e.stopPropagation();setShowAI(showAI===s.code?null:s.code)}} className="text-purple-400 text-[10px] ml-auto">🤖{showAI===s.code?'▲':'▼'}</button>
+          <div className="flex gap-0.5 flex-wrap items-center">
+            <span className="bg-blue-900/50 text-blue-300 px-1 py-0.5 rounded text-[8px]">{s.strat}</span>
+            {s.bbS?.s!=='관망'&&<span className="bg-cyan-900/50 text-cyan-300 px-1 py-0.5 rounded text-[8px]">BB:{s.bbS?.s}</span>}
+            {s.ichi?.signal?.includes('매수')&&<span className="bg-yellow-900/50 text-yellow-300 px-1 py-0.5 rounded text-[8px]">☁️{s.ichi.signal}</span>}
+            {s.ptn?.type!=='n'&&<span className={`px-1 py-0.5 rounded text-[8px] ${s.ptn.type==='b'?'bg-green-900/50 text-green-300':'bg-red-900/50 text-red-300'}`}>📊{s.ptn.pattern}</span>}
+            <button onClick={e=>{e.stopPropagation();setShowAI(showAI===s.code?null:s.code)}} className="text-purple-400 text-[9px] ml-auto">🤖{showAI===s.code?'▲':'▼'}</button>
           </div>
-          {showAI===s.code&&<><AIPanel s={s}/><BBPanel bb={s.bb} bbStrat={s.bbStrat}/>{s.postSurge?.isPostSurge&&<PostSurgePanel ps={s.postSurge}/>}</>}
+          {showAI===s.code&&<AIPanel s={s}/>}
         </>
       )}
       
       {sel?.code===s.code&&(
-        <div className="mt-2 pt-2 border-t border-gray-700">
-          <div className="flex gap-1 mb-1 flex-wrap">
-            {['w','m','q','h','y'].map(p=><button key={p} onClick={e=>{e.stopPropagation();setPeriod(p)}} className={`px-1.5 py-0.5 rounded text-[9px] ${period===p?'bg-blue-600':'bg-gray-700'}`}>{p==='w'?'1주':p==='m'?'1월':p==='q'?'3월':p==='h'?'6월':'1년'}</button>)}
-            <button onClick={e=>{e.stopPropagation();setShowBB(!showBB)}} className={`px-1.5 py-0.5 rounded text-[9px] ${showBB?'bg-cyan-600':'bg-gray-700'}`}>BB</button>
+        <div className="mt-1.5 pt-1.5 border-t border-gray-700">
+          <div className="flex gap-0.5 mb-1 flex-wrap">
+            {['w','m','q','h','y'].map(p=><button key={p} onClick={e=>{e.stopPropagation();setPeriod(p)}} className={`px-1 py-0.5 rounded text-[8px] ${period===p?'bg-blue-600':'bg-gray-700'}`}>{p==='w'?'1주':p==='m'?'1월':p==='q'?'3월':p==='h'?'6월':'1년'}</button>)}
+            <button onClick={e=>{e.stopPropagation();setShowBB(!showBB)}} className={`px-1 py-0.5 rounded text-[8px] ${showBB?'bg-cyan-600':'bg-gray-700'}`}>BB</button>
           </div>
-          {charts[s.code]?<><PriceChart data={charts[s.code]} name={s.name} period={period} showBB={showBB}/><VolChart data={charts[s.code]} period={period}/></>:<div className="h-32 flex items-center justify-center text-gray-400 text-xs">로딩...</div>}
-          {s.sr&&<div className="grid grid-cols-2 gap-1 text-[9px] mt-1"><div className="bg-red-900/30 rounded p-1"><span className="text-gray-400">저항</span>{s.sr.resistance?.slice(0,2).map((r,i)=><div key={i} className="text-red-400">{fmtNum(r)}</div>)}</div><div className="bg-blue-900/30 rounded p-1"><span className="text-gray-400">지지</span>{s.sr.support?.slice(0,2).map((r,i)=><div key={i} className="text-blue-400">{fmtNum(r)}</div>)}</div></div>}
-          {s.fib&&<div className="bg-gray-700/30 rounded p-1 mt-1 text-[8px]"><span className="text-gray-400">피보나치: </span><span className="text-purple-400">38.2%:{fmtNum(Math.round(s.fib.l618))}</span> <span className="text-yellow-400">50%:{fmtNum(Math.round(s.fib.l50))}</span> <span className="text-green-400">61.8%:{fmtNum(Math.round(s.fib.l382))}</span></div>}
-          <div className="mt-1"><textarea value={memos[s.code]||''} onChange={e=>saveMemo(s.code,e.target.value)} onClick={e=>e.stopPropagation()} className="w-full bg-gray-700 rounded p-1.5 text-[10px] h-12 resize-none" placeholder="메모..."/></div>
+          {charts[s.code]?<><PriceChart data={charts[s.code]} period={period} showBB={showBB}/><VolChart data={charts[s.code]} period={period}/></>:<div className="h-24 flex items-center justify-center text-gray-400 text-xs">로딩...</div>}
+          <InvPanel code={s.code}/>
+          {s.sr&&<div className="grid grid-cols-2 gap-1 text-[8px] mt-1"><div className="bg-red-900/30 rounded p-1"><span className="text-gray-400">저항</span>{s.sr.res?.map((r,i)=><div key={i} className="text-red-400">{fmtN(r)}</div>)}</div><div className="bg-blue-900/30 rounded p-1"><span className="text-gray-400">지지</span>{s.sr.sup?.map((r,i)=><div key={i} className="text-blue-400">{fmtN(r)}</div>)}</div></div>}
+          {s.fib&&<div className="bg-gray-700/30 rounded p-1 mt-1 text-[7px]"><span className="text-purple-400">38.2%:{fmtN(Math.round(s.fib.l382))}</span> <span className="text-yellow-400">50%:{fmtN(Math.round(s.fib.l50))}</span> <span className="text-green-400">61.8%:{fmtN(Math.round(s.fib.l618))}</span></div>}
+          {s.ichi&&<div className="bg-yellow-900/30 rounded p-1 mt-1 text-[8px]"><span className="text-gray-400">일목:</span> 전환{fmtN(s.ichi.tenkan)} 기준{fmtN(s.ichi.kijun)} <span className={s.ichi.signal?.includes('매수')?'text-green-400':'text-red-400'}>{s.ichi.signal}</span></div>}
+          <textarea value={memos[s.code]||''} onChange={e=>saveMemo(s.code,e.target.value)} onClick={e=>e.stopPropagation()} className="w-full bg-gray-700 rounded p-1 text-[9px] h-10 resize-none mt-1" placeholder="메모..."/>
         </div>
       )}
-      <div className="text-center text-[9px] text-gray-500 mt-1">{sel?.code===s.code?'▲':'▼'}</div>
+      <div className="text-center text-[8px] text-gray-500">{sel?.code===s.code?'▲':'▼'}</div>
     </div>
   );
 
   const PortSum=()=>{
     if(tab!=='port'||!list.length||!list[0].total)return null;
-    const inv=list.reduce((s,i)=>s+(i.buy||0)*(i.qty||0),0),val=list.reduce((s,i)=>s+(i.total||0),0),pnl=val-inv,rate=inv?((pnl/inv)*100).toFixed(2):0;
-    return<div className="bg-gradient-to-r from-green-800 to-blue-800 rounded-lg p-2 mb-2"><div className="text-[10px] text-gray-300">평가금액</div><div className="text-lg font-bold">{fmtNum(val)}원</div><div className={pnl>=0?'text-red-300':'text-blue-300'}>{pnl>=0?'+':''}{fmtNum(pnl)}원 ({pnl>=0?'+':''}{rate}%)</div></div>;
+    const inv=list.reduce((s,i)=>s+(i.buy||0)*(i.qty||0),0),val=list.reduce((s,i)=>s+(i.total||0),0),pnl=val-inv;
+    return<div className="bg-gradient-to-r from-green-800 to-blue-800 rounded-lg p-2 mb-2"><div className="text-[9px] text-gray-300">평가</div><div className="text-base font-bold">{fmtN(val)}원</div><div className={pnl>=0?'text-red-300':'text-blue-300'}>{pnl>=0?'+':''}{fmtN(pnl)}원 ({inv?(pnl/inv*100).toFixed(2):0}%)</div></div>;
   };
 
   const ComparePanel=()=>{
     if(compare.length<2)return null;
-    return(
-      <div className="bg-gray-800 rounded-lg p-2 mb-2 border border-cyan-500/30">
-        <div className="text-xs font-bold mb-2">⚖️ 종목비교</div>
-        <div className="overflow-x-auto"><table className="w-full text-[9px]"><thead><tr className="text-gray-400"><th></th>{compare.map(c=><th key={c.code}>{c.name}</th>)}</tr></thead><tbody>
-          <tr><td className="text-gray-400">가격</td>{compare.map(c=><td key={c.code}>{fmtNum(c.price)}</td>)}</tr>
-          <tr><td className="text-gray-400">등락</td>{compare.map(c=><td key={c.code} className={c.chg>=0?'text-red-400':'text-blue-400'}>{c.chg?.toFixed(2)}%</td>)}</tr>
-          <tr><td className="text-gray-400">RSI</td>{compare.map(c=><td key={c.code}>{c.rsi}</td>)}</tr>
-          <tr><td className="text-gray-400">AI점수</td>{compare.map(c=><td key={c.code} className={c.ai?.score>0?'text-green-400':'text-red-400'}>{c.ai?.score}</td>)}</tr>
-          <tr><td className="text-gray-400">신호</td>{compare.map(c=><td key={c.code}>{c.sig}</td>)}</tr>
-        </tbody></table></div>
-        <button onClick={()=>setCompare([])} className="text-[10px] text-gray-400 mt-1">초기화</button>
-      </div>
-    );
-  };
-
-  const StatsPanel=()=>{
-    const stats=getStats();
-    return(
-      <div className="bg-gray-800 rounded-lg p-2 mb-2">
-        <div className="text-xs font-bold mb-1">📊 매매통계</div>
-        <div className="grid grid-cols-4 gap-1 text-[10px]">
-          <div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">총거래</span><div>{stats.total}</div></div>
-          <div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">승</span><div className="text-green-400">{stats.wins}</div></div>
-          <div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">승률</span><div className={+stats.winRate>50?'text-green-400':'text-red-400'}>{stats.winRate}%</div></div>
-          <div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">수익</span><div className={stats.totalPnl>=0?'text-green-400':'text-red-400'}>{fmtNum(stats.totalPnl)}</div></div>
-        </div>
-      </div>
-    );
+    return(<div className="bg-gray-800 rounded-lg p-2 mb-2 border border-cyan-500/30 text-[9px]"><div className="font-bold mb-1">⚖️비교</div><table className="w-full"><thead><tr className="text-gray-400"><th></th>{compare.map(c=><th key={c.code}>{c.name?.slice(0,4)}</th>)}</tr></thead><tbody><tr><td>가격</td>{compare.map(c=><td key={c.code}>{fmtN(c.price)}</td>)}</tr><tr><td>등락</td>{compare.map(c=><td key={c.code} className={c.chg>=0?'text-red-400':'text-blue-400'}>{c.chg?.toFixed(1)}%</td>)}</tr><tr><td>AI</td>{compare.map(c=><td key={c.code} className={c.ai?.sc>0?'text-green-400':'text-red-400'}>{c.ai?.sc}</td>)}</tr></tbody></table><button onClick={()=>setCompare([])} className="text-gray-400 mt-1">초기화</button></div>);
   };
 
   const CalcModal=()=>{
-    const[calcType,setCalcType]=useState('dca');
-    const[v,setV]=useState({buy:0,qty:0,add:0,addQty:0,entry:0,target:0,stop:0,capital:1000000,risk:2});
-    if(!calcModal)return null;
-    return(
-      <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={()=>setCalcModal(null)}>
-        <div className="bg-gray-800 rounded-xl p-4 w-full max-w-sm" onClick={e=>e.stopPropagation()}>
-          <div className="flex gap-2 mb-3">{['dca','rr','pos'].map(t=><button key={t} onClick={()=>setCalcType(t)} className={`flex-1 py-1 rounded text-xs ${calcType===t?'bg-blue-600':'bg-gray-700'}`}>{t==='dca'?'분할매수':t==='rr'?'손익비':'포지션'}</button>)}</div>
-          {calcType==='dca'&&<div className="space-y-2 text-sm">
-            <input type="number" placeholder="기존매수가" onChange={e=>setV({...v,buy:+e.target.value})} className="w-full bg-gray-700 rounded p-2"/>
-            <input type="number" placeholder="기존수량" onChange={e=>setV({...v,qty:+e.target.value})} className="w-full bg-gray-700 rounded p-2"/>
-            <input type="number" placeholder="추가매수가" onChange={e=>setV({...v,add:+e.target.value})} className="w-full bg-gray-700 rounded p-2"/>
-            <input type="number" placeholder="추가수량" onChange={e=>setV({...v,addQty:+e.target.value})} className="w-full bg-gray-700 rounded p-2"/>
-            {v.buy>0&&v.qty>0&&v.add>0&&v.addQty>0&&<div className="bg-blue-900/50 rounded p-2 text-center">평균단가: <b>{fmtNum(calcDCA(v.buy,v.qty,v.add,v.addQty).avgPrice)}</b>원 / {calcDCA(v.buy,v.qty,v.add,v.addQty).totalQty}주</div>}
-          </div>}
-          {calcType==='rr'&&<div className="space-y-2 text-sm">
-            <input type="number" placeholder="진입가" onChange={e=>setV({...v,entry:+e.target.value})} className="w-full bg-gray-700 rounded p-2"/>
-            <input type="number" placeholder="목표가" onChange={e=>setV({...v,target:+e.target.value})} className="w-full bg-gray-700 rounded p-2"/>
-            <input type="number" placeholder="손절가" onChange={e=>setV({...v,stop:+e.target.value})} className="w-full bg-gray-700 rounded p-2"/>
-            {v.entry>0&&v.target>0&&v.stop>0&&<div className="bg-blue-900/50 rounded p-2 text-center">손익비: <b>{calcRiskReward(v.entry,v.target,v.stop)}</b> : 1</div>}
-          </div>}
-          {calcType==='pos'&&<div className="space-y-2 text-sm">
-            <input type="number" placeholder="총자본" value={v.capital} onChange={e=>setV({...v,capital:+e.target.value})} className="w-full bg-gray-700 rounded p-2"/>
-            <input type="number" placeholder="리스크%" value={v.risk} onChange={e=>setV({...v,risk:+e.target.value})} className="w-full bg-gray-700 rounded p-2"/>
-            <input type="number" placeholder="진입가" onChange={e=>setV({...v,entry:+e.target.value})} className="w-full bg-gray-700 rounded p-2"/>
-            <input type="number" placeholder="손절가" onChange={e=>setV({...v,stop:+e.target.value})} className="w-full bg-gray-700 rounded p-2"/>
-            {v.entry>0&&v.stop>0&&<div className="bg-blue-900/50 rounded p-2 text-center">매수수량: <b>{calcPositionSize(v.capital,v.risk,v.entry,v.stop)}</b>주</div>}
-          </div>}
-          <button onClick={()=>setCalcModal(null)} className="w-full mt-3 py-2 bg-gray-700 rounded">닫기</button>
-        </div>
-      </div>
-    );
+    const[ct,setCt]=useState('dca');
+    const[v,setV]=useState({b:0,q:0,a:0,aq:0,e:0,t:0,s:0,cap:1e6,rsk:2});
+    if(!calcMod)return null;
+    return(<div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={()=>setCalcMod(null)}><div className="bg-gray-800 rounded-xl p-3 w-full max-w-xs text-sm" onClick={e=>e.stopPropagation()}><div className="flex gap-1 mb-2">{['dca','rr','pos'].map(t=><button key={t} onClick={()=>setCt(t)} className={`flex-1 py-1 rounded text-xs ${ct===t?'bg-blue-600':'bg-gray-700'}`}>{t==='dca'?'분할매수':t==='rr'?'손익비':'포지션'}</button>)}</div>
+    {ct==='dca'&&<div className="space-y-2"><input type="number" placeholder="기존매수가" onChange={e=>setV({...v,b:+e.target.value})} className="w-full bg-gray-700 rounded p-2 text-sm"/><input type="number" placeholder="기존수량" onChange={e=>setV({...v,q:+e.target.value})} className="w-full bg-gray-700 rounded p-2"/><input type="number" placeholder="추가매수가" onChange={e=>setV({...v,a:+e.target.value})} className="w-full bg-gray-700 rounded p-2"/><input type="number" placeholder="추가수량" onChange={e=>setV({...v,aq:+e.target.value})} className="w-full bg-gray-700 rounded p-2"/>{v.b&&v.q&&v.a&&v.aq?<div className="bg-blue-900/50 rounded p-2 text-center">평균:{fmtN(calcDCA(v.b,v.q,v.a,v.aq).avg)}원/{calcDCA(v.b,v.q,v.a,v.aq).tq}주</div>:null}</div>}
+    {ct==='rr'&&<div className="space-y-2"><input type="number" placeholder="진입가" onChange={e=>setV({...v,e:+e.target.value})} className="w-full bg-gray-700 rounded p-2"/><input type="number" placeholder="목표가" onChange={e=>setV({...v,t:+e.target.value})} className="w-full bg-gray-700 rounded p-2"/><input type="number" placeholder="손절가" onChange={e=>setV({...v,s:+e.target.value})} className="w-full bg-gray-700 rounded p-2"/>{v.e&&v.t&&v.s?<div className="bg-blue-900/50 rounded p-2 text-center">손익비:{calcRR(v.e,v.t,v.s)}:1</div>:null}</div>}
+    {ct==='pos'&&<div className="space-y-2"><input type="number" value={v.cap} onChange={e=>setV({...v,cap:+e.target.value})} className="w-full bg-gray-700 rounded p-2" placeholder="자본"/><input type="number" value={v.rsk} onChange={e=>setV({...v,rsk:+e.target.value})} className="w-full bg-gray-700 rounded p-2" placeholder="리스크%"/><input type="number" onChange={e=>setV({...v,e:+e.target.value})} className="w-full bg-gray-700 rounded p-2" placeholder="진입가"/><input type="number" onChange={e=>setV({...v,s:+e.target.value})} className="w-full bg-gray-700 rounded p-2" placeholder="손절가"/>{v.e&&v.s?<div className="bg-blue-900/50 rounded p-2 text-center">매수:{calcPos(v.cap,v.rsk,v.e,v.s)}주</div>:null}</div>}
+    <button onClick={()=>setCalcMod(null)} className="w-full mt-2 py-2 bg-gray-700 rounded">닫기</button></div></div>);
   };
 
   if(!logged)return(
-    <div className={`min-h-screen flex items-center justify-center p-4 ${dark?'bg-gray-900':'bg-gray-100'}`}>
-      <div className={`max-w-sm w-full ${dark?'bg-gray-800':'bg-white'} rounded-2xl p-5 shadow-xl`}>
-        <h1 className="text-xl font-bold text-center mb-1">🇰🇷 주식 스크리너 Pro Max</h1>
-        <p className="text-gray-400 text-xs text-center mb-4">KIS API + AI + 볼린저밴드</p>
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gray-900">
+      <div className="max-w-sm w-full bg-gray-800 rounded-2xl p-5">
+        <h1 className="text-lg font-bold text-center mb-1">🇰🇷 스크리너 Ultimate</h1>
+        <p className="text-gray-400 text-xs text-center mb-4">KIS API + AI + 패턴 + 일목</p>
         <div className="space-y-3">
-          <input value={key} onChange={e=>setKey(e.target.value)} className={`w-full ${dark?'bg-gray-700':'bg-gray-100'} rounded-lg px-3 py-2 text-sm`} placeholder="APP KEY"/>
-          <input type="password" value={sec} onChange={e=>setSec(e.target.value)} className={`w-full ${dark?'bg-gray-700':'bg-gray-100'} rounded-lg px-3 py-2 text-sm`} placeholder="APP SECRET"/>
+          <input value={key} onChange={e=>setKey(e.target.value)} className="w-full bg-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="APP KEY"/>
+          <input type="password" value={sec} onChange={e=>setSec(e.target.value)} className="w-full bg-gray-700 rounded-lg px-3 py-2 text-sm" placeholder="APP SECRET"/>
           {err&&<div className="text-red-400 text-xs">{err}</div>}
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={save} onChange={e=>setSave(e.target.checked)}/>🔐 저장</label>
-          <button onClick={login} disabled={load} className="w-full bg-blue-600 py-2.5 rounded-lg font-bold disabled:opacity-50">{load?'...':'🔗 로그인'}</button>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={save} onChange={e=>setSave(e.target.checked)}/>🔐저장</label>
+          <button onClick={login} disabled={load} className="w-full bg-blue-600 py-2.5 rounded-lg font-bold disabled:opacity-50">{load?'...':'🔗로그인'}</button>
         </div>
       </div>
     </div>
   );
 
   return(
-    <div className={`min-h-screen pb-16 ${dark?'bg-gray-900 text-white':'bg-gray-100 text-gray-900'}`}>
+    <div className="min-h-screen pb-14 bg-gray-900 text-white">
       <div className="max-w-lg mx-auto p-2">
         <div className="bg-gradient-to-r from-blue-700 to-purple-700 rounded-lg p-2 mb-2">
           <div className="flex justify-between items-center">
-            <div><h1 className="font-bold text-white text-sm">🇰🇷 Pro Max</h1><div className="flex items-center gap-1">{upd&&<span className="text-[9px] text-gray-300">{upd}</span>}{autoRefresh&&<span className="text-[9px] text-green-300 animate-pulse-slow">🔄</span>}</div></div>
-            <div className="flex gap-1">
-              <button onClick={()=>setCalcModal(true)} className="bg-gray-700 px-2 py-1 rounded text-xs">🧮</button>
-              <button onClick={()=>{if(tab==='scan')scan();else if(tab==='fav')refreshFav();else if(tab==='port')refreshPort();else if(tab==='search')searchStock()}} disabled={load} className="bg-white text-purple-800 px-2 py-1 rounded font-bold text-sm disabled:opacity-50">{load?'⏳':'🔍'}</button>
-            </div>
-          </div>
-        </div>
-        
-        {err&&<div className="bg-red-900/50 rounded p-2 mb-2 text-red-300 text-xs">{err}</div>}
-        
-        <div className="flex gap-1 mb-2 overflow-x-auto scrollbar-hide text-[10px]">
-          {[{id:'scan',i:'🔍',l:'스크리닝'},{id:'fav',i:'⭐',l:`관심(${favs.length})`},{id:'port',i:'💼',l:'포트'},{id:'search',i:'🔎',l:'검색'},{id:'rank',i:'🏆',l:'랭킹'},{id:'alert',i:'🔔',l:'알림'},{id:'stat',i:'📊',l:'통계'},{id:'set',i:'⚙️',l:'설정'}].map(t=><button key={t.id} onClick={()=>{setTab(t.id);setList([]);setShowAI(null)}} className={`px-2 py-1 rounded font-bold whitespace-nowrap ${tab===t.id?'bg-blue-600':'bg-gray-800'}`}>{t.i}{t.l}</button>)}
-        </div>
-        
-        {tab==='scan'&&<>
-          <div className="flex gap-1 mb-1">
-            {[['day','🔥데이'],['swing','📊스윙'],['bottom','🔥저점'],['bb','📊BB']].map(([m,l])=><button key={m} onClick={()=>setMode(m)} className={`flex-1 py-1 rounded font-bold text-[10px] ${mode===m?'bg-blue-600':'bg-gray-800'}`}>{l}</button>)}
-          </div>
-          <div className="flex gap-1 mb-2">
-            {[['all','전체'],['low','🪙동전'],['mid','💵중가']].map(([p,l])=><button key={p} onClick={()=>setPrice(p)} className={`flex-1 py-1 rounded font-bold text-[10px] ${price===p?'bg-green-600':'bg-gray-800'}`}>{l}</button>)}
-          </div>
-          {mode==='bb'&&<div className="bg-cyan-900/30 rounded p-1.5 mb-2 text-[10px] text-cyan-300">📊 볼린저밴드 하단반등 + 스퀴즈 종목</div>}
-        </>}
-        
-        {tab==='search'&&<div className="mb-2"><input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==='Enter'&&searchStock()} className="w-full bg-gray-800 rounded px-3 py-2 text-sm" placeholder="종목코드 6자리"/></div>}
-        
-        {tab==='rank'&&list.length>0&&<div className="mb-2"><div className="text-xs font-bold mb-1">🏆 AI점수 TOP</div>{[...list].sort((a,b)=>(b.ai?.score||0)-(a.ai?.score||0)).slice(0,5).map((s,i)=><div key={s.code} className="flex justify-between items-center bg-gray-800 rounded p-1.5 mb-1 text-xs"><span>#{i+1} {s.name}</span><span className={s.ai?.score>0?'text-green-400':'text-red-400'}>{s.ai?.score}점</span></div>)}</div>}
-        
-        {tab==='alert'&&<div className="space-y-2">
-          <div className="flex justify-between items-center p-2 bg-gray-800 rounded"><span className="text-xs">🔔 알림</span><button onClick={()=>setAlertOn(!alertOn)} className={`w-10 h-5 rounded-full ${alertOn?'bg-green-500':'bg-gray-600'}`}><div className={`w-4 h-4 bg-white rounded-full transform ${alertOn?'translate-x-5':'translate-x-0.5'}`}/></button></div>
-          {alerts.map((a,i)=><div key={i} className="p-2 bg-gray-800 rounded flex justify-between text-xs"><div><b>{a.name}</b><div className="text-gray-400">{a.type} {fmtNum(a.val)}</div></div><div className="flex gap-2"><button onClick={()=>togAlert(i)} className={`w-8 h-4 rounded-full ${a.on?'bg-green-500':'bg-gray-600'}`}><div className={`w-3 h-3 bg-white rounded-full ${a.on?'translate-x-4':'translate-x-0.5'}`}/></button><button onClick={()=>delAlert(i)} className="text-red-400">🗑</button></div></div>)}
-        </div>}
-        
-        {tab==='stat'&&<StatsPanel/>}
-        
-        {tab==='set'&&<div className="space-y-2">
-          <div className="flex justify-between items-center p-2 bg-gray-800 rounded text-xs"><span>{dark?'🌙다크':'☀️라이트'}</span><button onClick={()=>setDark(!dark)} className={`w-10 h-5 rounded-full ${dark?'bg-blue-500':'bg-yellow-500'}`}><div className={`w-4 h-4 bg-white rounded-full ${dark?'translate-x-5':'translate-x-0.5'}`}/></button></div>
-          <div className="flex justify-between items-center p-2 bg-gray-800 rounded text-xs"><span>🔄자동새로고침</span><button onClick={()=>setAutoRefresh(!autoRefresh)} className={`w-10 h-5 rounded-full ${autoRefresh?'bg-green-500':'bg-gray-600'}`}><div className={`w-4 h-4 bg-white rounded-full ${autoRefresh?'translate-x-5':'translate-x-0.5'}`}/></button></div>
-          {autoRefresh&&<div className="flex gap-1">{[30,60,120].map(s=><button key={s} onClick={()=>setRefreshInterval(s)} className={`flex-1 py-1 rounded text-xs ${refreshInterval===s?'bg-blue-600':'bg-gray-700'}`}>{s}초</button>)}</div>}
-          <div className="p-2 bg-gray-800 rounded text-xs"><div>관심:{favs.length} 포트:{port.length} 알림:{alerts.length}</div><button onClick={()=>confirm('삭제?')&&(setFavs([]),setPort([]),setAlerts([]),setMemos({}),setTrades([]),localStorage.clear())} className="mt-2 w-full py-1.5 bg-red-600 rounded">🗑전체삭제</button></div>
-          <button onClick={logout} className="w-full py-2 bg-gray-700 rounded text-xs">🚪로그아웃</button>
-        </div>}
-        
-        <ComparePanel/>
-        <PortSum/>
-        
-        {list.length>0&&!load&&!['alert','set','stat'].includes(tab)&&<div>{list.map((s,i)=><Card key={s.code} s={s} i={i} rank={tab==='scan'||tab==='rank'} isPort={tab==='port'}/>)}</div>}
-        
-        {!list.length&&!load&&!['alert','set','stat'].includes(tab)&&<div className="text-center py-8"><div className="text-3xl mb-2">{tab==='scan'?'📈':tab==='fav'?'⭐':tab==='port'?'💼':'🔎'}</div><p className="text-gray-400 text-sm">🔍 버튼으로 시작</p></div>}
-        
-        {load&&<div className="text-center py-8"><div className="text-3xl animate-bounce">🔍</div><p className="text-gray-400 text-xs mt-2">{prog}</p></div>}
-      </div>
-      
-      {modal==='port'&&<div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={()=>setModal(null)}><div className="bg-gray-800 rounded-xl p-4 w-full max-w-xs" onClick={e=>e.stopPropagation()}><h3 className="font-bold mb-2 text-sm">💼 포트폴리오</h3><div className="text-xs mb-2">{form.name}</div><input type="number" value={form.buy} onChange={e=>setForm({...form,buy:e.target.value})} className="w-full bg-gray-700 rounded p-2 mb-2 text-sm" placeholder="매수가"/><input type="number" value={form.qty} onChange={e=>setForm({...form,qty:e.target.value})} className="w-full bg-gray-700 rounded p-2 mb-2 text-sm" placeholder="수량"/><div className="flex gap-2"><button onClick={()=>setModal(null)} className="flex-1 py-2 bg-gray-700 rounded text-sm">취소</button><button onClick={savePort} className="flex-1 py-2 bg-blue-600 rounded text-sm font-bold">저장</button></div></div></div>}
-      
-      {modal==='alert'&&<div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={()=>setModal(null)}><div className="bg-gray-800 rounded-xl p-4 w-full max-w-xs" onClick={e=>e.stopPropagation()}><h3 className="font-bold mb-2 text-sm">🔔 알림</h3><div className="text-xs mb-2">{form.name}</div><select value={form.type} onChange={e=>setForm({...form,type:e.target.value})} className="w-full bg-gray-700 rounded p-2 mb-2 text-sm"><option value="target">목표가</option><option value="stop">손절가</option><option value="surge">급등%</option><option value="plunge">급락%</option><option value="ma5">5일선돌파</option><option value="rsi30">RSI30이하</option></select><input type="number" value={form.val} onChange={e=>setForm({...form,val:e.target.value})} className="w-full bg-gray-700 rounded p-2 mb-2 text-sm" placeholder="값"/><div className="flex gap-2"><button onClick={()=>setModal(null)} className="flex-1 py-2 bg-gray-700 rounded text-sm">취소</button><button onClick={saveAlert} className="flex-1 py-2 bg-blue-600 rounded text-sm font-bold">저장</button></div></div></div>}
-      
-      <CalcModal/>
-    </div>
-  );
-};
-
-const root=ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App/>);
-</script>
-</body>
-</html>
--gray-300">{upd}</span>}{autoRef&&<span className="text-[8px] text-green-300 anim-pulse">🔄</span>}</div></div>
+            <div><h1 className="font-bold text-sm">🇰🇷 Ultimate</h1><div className="flex items-center gap-1">{upd&&<span className="text-[8px] text-gray-300">{upd}</span>}{autoRef&&<span className="text-[8px] text-green-300">🔄</span>}</div></div>
             <div className="flex gap-1">
               <button onClick={()=>setCalcMod(true)} className="bg-gray-700 px-2 py-1 rounded text-xs">🧮</button>
               <button onClick={()=>{if(tab==='scan')scan();else if(tab==='fav')refreshFav();else if(tab==='port')refreshPort();else if(tab==='search')searchStock()}} disabled={load} className="bg-white text-purple-800 px-2 py-1 rounded font-bold text-sm disabled:opacity-50">{load?'⏳':'🔍'}</button>
@@ -769,7 +557,7 @@ root.render(<App/>);
         {err&&<div className="bg-red-900/50 rounded p-1.5 mb-2 text-red-300 text-xs">{err}</div>}
         
         <div className="flex gap-1 mb-2 overflow-x-auto scroll-hide text-[9px]">
-          {[{id:'scan',i:'🔍',l:'스크린'},{id:'fav',i:'⭐',l:`관심(${favs.length})`},{id:'port',i:'💼',l:'포트'},{id:'search',i:'🔎',l:'검색'},{id:'rank',i:'🏆',l:'랭킹'},{id:'report',i:'📋',l:'리포트'},{id:'alert',i:'🔔',l:'알림'},{id:'stat',i:'📊',l:'통계'},{id:'set',i:'⚙️',l:'설정'}].map(t=><button key={t.id} onClick={()=>{setTab(t.id);setList([]);setShowAI(null)}} className={`px-1.5 py-1 rounded font-bold whitespace-nowrap ${tab===t.id?'bg-blue-600':'bg-gray-800'}`}>{t.i}{t.l}</button>)}
+          {[{id:'scan',i:'🔍',l:'스크린'},{id:'fav',i:'⭐',l:`관심(${favs.length})`},{id:'port',i:'💼',l:'포트'},{id:'search',i:'🔎',l:'검색'},{id:'alert',i:'🔔',l:'알림'},{id:'set',i:'⚙️',l:'설정'}].map(t=><button key={t.id} onClick={()=>{setTab(t.id);setList([]);setShowAI(null)}} className={`px-1.5 py-1 rounded font-bold whitespace-nowrap ${tab===t.id?'bg-blue-600':'bg-gray-800'}`}>{t.i}{t.l}</button>)}
         </div>
         
         {tab==='scan'&&<>
@@ -783,35 +571,22 @@ root.render(<App/>);
         
         {tab==='search'&&<div className="mb-2"><input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==='Enter'&&searchStock()} className="w-full bg-gray-800 rounded px-3 py-2 text-sm" placeholder="종목코드 6자리"/></div>}
         
-        {tab==='rank'&&list.length>0&&<div className="mb-2 text-[10px]"><div className="font-bold mb-1">🏆 AI TOP5</div>{[...list].sort((a,b)=>(b.ai?.sc||0)-(a.ai?.sc||0)).slice(0,5).map((s,i)=><div key={s.code} className="flex justify-between bg-gray-800 rounded p-1 mb-0.5"><span>#{i+1} {s.name}</span><span className={s.ai?.sc>0?'text-green-400':'text-red-400'}>{s.ai?.sc}점</span></div>)}</div>}
-        
-        {tab==='report'&&list.length>0&&<ReportPanel/>}
-        
         {tab==='alert'&&<div className="space-y-1.5 text-[10px]">
           <div className="flex justify-between items-center p-2 bg-gray-800 rounded"><span>🔔알림</span><button onClick={()=>setAlertOn(!alertOn)} className={`w-10 h-5 rounded-full ${alertOn?'bg-green-500':'bg-gray-600'}`}><div className={`w-4 h-4 bg-white rounded-full transform ${alertOn?'translate-x-5':'translate-x-0.5'}`}/></button></div>
           {alerts.map((a,i)=><div key={i} className="p-1.5 bg-gray-800 rounded flex justify-between"><div><b>{a.name}</b> {a.type} {fmtN(a.val)}</div><div className="flex gap-1"><button onClick={()=>togAlert(i)} className={`w-8 h-4 rounded-full ${a.on?'bg-green-500':'bg-gray-600'}`}><div className={`w-3 h-3 bg-white rounded-full ${a.on?'translate-x-4':'translate-x-0.5'}`}/></button><button onClick={()=>delAlert(i)} className="text-red-400">🗑</button></div></div>)}
         </div>}
         
-        {tab==='stat'&&<div className="bg-gray-800 rounded-lg p-2 mb-2 text-[10px]">
-          <div className="font-bold mb-1">📊 매매통계</div>
-          {(()=>{const st=getStats();return<div className="grid grid-cols-4 gap-1"><div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">거래</span><div>{st.total}</div></div><div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">승</span><div className="text-green-400">{st.wins}</div></div><div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">승률</span><div className={+st.rate>50?'text-green-400':'text-red-400'}>{st.rate}%</div></div><div className="bg-gray-700/50 rounded p-1 text-center"><span className="text-gray-400">수익</span><div className={st.pnl>=0?'text-green-400':'text-red-400'}>{fmtN(st.pnl)}</div></div></div>})()}
-        </div>}
-        
         {tab==='set'&&<div className="space-y-1.5 text-[10px]">
-          <div className="flex justify-between items-center p-2 bg-gray-800 rounded"><span>{dark?'🌙다크':'☀️라이트'}</span><button onClick={()=>setDark(!dark)} className={`w-10 h-5 rounded-full ${dark?'bg-blue-500':'bg-yellow-500'}`}><div className={`w-4 h-4 bg-white rounded-full ${dark?'translate-x-5':'translate-x-0.5'}`}/></button></div>
           <div className="flex justify-between items-center p-2 bg-gray-800 rounded"><span>🔄자동새로고침</span><button onClick={()=>setAutoRef(!autoRef)} className={`w-10 h-5 rounded-full ${autoRef?'bg-green-500':'bg-gray-600'}`}><div className={`w-4 h-4 bg-white rounded-full ${autoRef?'translate-x-5':'translate-x-0.5'}`}/></button></div>
           {autoRef&&<div className="flex gap-1">{[30,60,120].map(s=><button key={s} onClick={()=>setRefInt(s)} className={`flex-1 py-1 rounded ${refInt===s?'bg-blue-600':'bg-gray-700'}`}>{s}초</button>)}</div>}
           <div className="p-2 bg-gray-800 rounded">
             <div className="mb-1">데이터: 관심{favs.length} 포트{port.length} 알림{alerts.length}</div>
             <div className="flex gap-1">
-              <button onClick={()=>exportCSV(favs,'favs.csv')} className="flex-1 py-1 bg-blue-700 rounded">📤관심CSV</button>
-              <button onClick={()=>exportCSV(port,'port.csv')} className="flex-1 py-1 bg-blue-700 rounded">📤포트CSV</button>
-            </div>
-            <div className="flex gap-1 mt-1">
+              <button onClick={()=>exportCSV(favs,'favs.csv')} className="flex-1 py-1 bg-blue-700 rounded">📤CSV</button>
               <button onClick={backup} className="flex-1 py-1 bg-green-700 rounded">💾백업</button>
               <label className="flex-1 py-1 bg-green-700 rounded text-center cursor-pointer">📂복원<input type="file" accept=".json" onChange={restore} className="hidden"/></label>
             </div>
-            <button onClick={()=>confirm('삭제?')&&(setFavs([]),setPort([]),setAlerts([]),setMemos({}),setTrades([]),localStorage.clear())} className="w-full mt-1 py-1 bg-red-600 rounded">🗑전체삭제</button>
+            <button onClick={()=>confirm('삭제?')&&(setFavs([]),setPort([]),setAlerts([]),setMemos({}),localStorage.clear())} className="w-full mt-1 py-1 bg-red-600 rounded">🗑전체삭제</button>
           </div>
           <button onClick={logout} className="w-full py-2 bg-gray-700 rounded">🚪로그아웃</button>
         </div>}
@@ -819,16 +594,16 @@ root.render(<App/>);
         <ComparePanel/>
         <PortSum/>
         
-        {list.length>0&&!load&&!['alert','set','stat','report'].includes(tab)&&<div>{list.map((s,i)=><Card key={s.code} s={s} i={i} rank={tab==='scan'||tab==='rank'} isPort={tab==='port'}/>)}</div>}
+        {list.length>0&&!load&&!['alert','set'].includes(tab)&&<div>{list.map((s,i)=><Card key={s.code} s={s} i={i} rank={tab==='scan'} isPort={tab==='port'}/>)}</div>}
         
-        {!list.length&&!load&&!['alert','set','stat','report'].includes(tab)&&<div className="text-center py-8"><div className="text-2xl mb-2">{tab==='scan'?'📈':'🔍'}</div><p className="text-gray-400 text-sm">🔍시작</p></div>}
+        {!list.length&&!load&&!['alert','set'].includes(tab)&&<div className="text-center py-8"><div className="text-2xl mb-2">{tab==='scan'?'📈':'🔍'}</div><p className="text-gray-400 text-sm">🔍시작</p></div>}
         
         {load&&<div className="text-center py-8"><div className="text-2xl animate-bounce">🔍</div><p className="text-gray-400 text-xs mt-2">{prog}</p></div>}
       </div>
       
       {modal==='port'&&<div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={()=>setModal(null)}><div className="bg-gray-800 rounded-xl p-3 w-full max-w-xs" onClick={e=>e.stopPropagation()}><h3 className="font-bold mb-2 text-sm">💼포트</h3><div className="text-xs mb-2">{form.name}</div><input type="number" value={form.buy} onChange={e=>setForm({...form,buy:e.target.value})} className="w-full bg-gray-700 rounded p-2 mb-2 text-sm" placeholder="매수가"/><input type="number" value={form.qty} onChange={e=>setForm({...form,qty:e.target.value})} className="w-full bg-gray-700 rounded p-2 mb-2 text-sm" placeholder="수량"/><div className="flex gap-2"><button onClick={()=>setModal(null)} className="flex-1 py-2 bg-gray-700 rounded">취소</button><button onClick={savePort} className="flex-1 py-2 bg-blue-600 rounded font-bold">저장</button></div></div></div>}
       
-      {modal==='alert'&&<div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={()=>setModal(null)}><div className="bg-gray-800 rounded-xl p-3 w-full max-w-xs" onClick={e=>e.stopPropagation()}><h3 className="font-bold mb-2 text-sm">🔔알림</h3><div className="text-xs mb-2">{form.name}</div><select value={form.type} onChange={e=>setForm({...form,type:e.target.value})} className="w-full bg-gray-700 rounded p-2 mb-2 text-sm"><option value="target">목표가</option><option value="stop">손절가</option><option value="surge">급등%</option><option value="golden">골든크로스</option><option value="rsi30">RSI&lt;30</option></select><input type="number" value={form.val} onChange={e=>setForm({...form,val:e.target.value})} className="w-full bg-gray-700 rounded p-2 mb-2 text-sm" placeholder="값"/><div className="flex gap-2"><button onClick={()=>setModal(null)} className="flex-1 py-2 bg-gray-700 rounded">취소</button><button onClick={saveAlert} className="flex-1 py-2 bg-blue-600 rounded font-bold">저장</button></div></div></div>}
+      {modal==='alert'&&<div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={()=>setModal(null)}><div className="bg-gray-800 rounded-xl p-3 w-full max-w-xs" onClick={e=>e.stopPropagation()}><h3 className="font-bold mb-2 text-sm">🔔알림</h3><div className="text-xs mb-2">{form.name}</div><select value={form.type} onChange={e=>setForm({...form,type:e.target.value})} className="w-full bg-gray-700 rounded p-2 mb-2 text-sm"><option value="target">목표가</option><option value="stop">손절가</option><option value="surge">급등%</option></select><input type="number" value={form.val} onChange={e=>setForm({...form,val:e.target.value})} className="w-full bg-gray-700 rounded p-2 mb-2 text-sm" placeholder="값"/><div className="flex gap-2"><button onClick={()=>setModal(null)} className="flex-1 py-2 bg-gray-700 rounded">취소</button><button onClick={saveAlert} className="flex-1 py-2 bg-blue-600 rounded font-bold">저장</button></div></div></div>}
       
       <CalcModal/>
     </div>
