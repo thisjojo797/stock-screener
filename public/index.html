@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>주식 스크리너</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#1f2937">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { margin: 0; padding: 0; overscroll-behavior: none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // 서버 주소 자동 감지
+    const API_BASE = window.location.origin + '/api';
+
+    // RSI 계산
+    const calculateRSI = (prices, period = 14) => {
+      if (prices.length < period + 1) return 50;
+      
+      let gains = 0;
+      let losses = 0;
+      
+      for (let i = 1; i <= period; i++) {
+        const change = prices[i - 1] - prices[i];
+        if (change > 0) gains += change;
+        else losses -= change;
+      }
+      
+      const avgGain = gains / period;
+      const avgLoss = losses / period;
+      
+      if (avgLoss === 0) return 100;
+      const rs = avgGain / avgLoss;
+      return Math.round(100 - (100 / (1 + rs)));
+    };
+
+    // 이동평균 상태 판단
+    const getMAStatus = (prices) => {
+      if (prices.length < 60) return '데이터부족';
+      
+      const ma5 = prices.slice(0, 5).reduce((a, b) => a + b, 0) / 5;
+      const ma20 = prices.slice(0, 20).reduce((a, b) => a + b, 0) / 20;
+      const ma60 = prices.slice(0, 60).reduce((a, b) => a + b, 0) / 60;
+      
+      if (ma5 > ma20 && ma20 > ma60) return '정배열';
+      if (ma5 < ma20 && ma20 < ma60) return '역배열';
+      if (prices[0] > ma60) return '60일지지';
+      if (prices[0] > ma20) return '20일지지';
+      return '혼조';
+    };
+
+    // 매매 신호 판단
+    const getSignal = (rsi, maStatus, changeRate) => {
+      if (rsi > 70) return 'SELL';
+      if (rsi < 30 && maStatus !== '역배열') return 'BUY';
+      if (maStatus === '정배열' && changeRate > 0) return 'BUY';
+      if (maStatus === '역배열' && changeRate < 0) return 'SELL';
+      return 'HOLD';
+    };
+
+    // 전략 추천
+    const getStrategy = (rsi, maStatus, changeRate, volume) => {
+      if (changeRate > 10 && volume > 10000000) return '뉴스매매';
+      if (maStatus === '정배열' && rsi > 50 && rsi < 70) return '추세매매';
+      if (maStatus === '60일지지' || maStatus === '20일지지') return '눌림목매매';
+      if (rsi < 30) return '역발상매매';
+      if (changeRate > 5) return '돌파매매';
+      return '관망';
+    };
+
+    const App = () => {
+      const [appKey, setAppKey] = useState(localStorage.getItem('kis_appkey') || '');
+      const [appSecret, setAppSecret] = useState(localStorage.getItem('kis_appsecret') || '');
+      const [saveKeys, setSaveKeys] = useState(localStorage.getItem('kis_save_keys') === 'true');
+      const [isLoggedIn, setIsLoggedIn] = useState(false);
+      
+      const [activeTab, setActiveTab] = useState('day');
+      const [priceTab, setPriceTab] = useState('low');
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState(null);
+      const [results, setResults] = useState([]);
+      const [selectedStock, setSelectedStock] = useState(null);
+      const [lastUpdate, setLastUpdate] = useState(null);
+      const [progress, setProgress] = useState('');
+
+      // 자동 로그인 시도 (저장된 키가 있을 때만)
+      useEffect(() => {
+        if (saveKeys && appKey && appSecret) {
+          handleLogin();
+        }
+      }, []);
+
+      // 로그인 처리
+      const handleLogin = async () => {
+        if (!appKey || !appSecret) {
+          setError('APP KEY와 APP SECRET을 입력해주세요.');
+          return;
+        }
+
+        setLoading(true);
+        setError(null);
+
+        try {
+          const response = await fetch(`${API_BASE}/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ appKey, appSecret })
+          });
+
+          const data = await response.json();
+          
+          if (response.ok) {
+            if (saveKeys) {
+              localStorage.setItem('kis_appkey', appKey);
+              localStorage.setItem('kis_appsecret', appSecret);
+              localStorage.setItem('kis_save_keys', 'true');
+            } else {
+              localStorage.removeItem('kis_appkey');
+              localStorage.removeItem('kis_appsecret');
+              localStorage.removeItem('kis_save_keys');
+            }
+            setIsLoggedIn(true);
+          } else {
+            setError(`로그인 실패: ${data.error}`);
+          }
+        } catch (err) {
+          setError(`서버 연결 실패: ${err.message}`);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      // 로그아웃
+      const handleLogout = () => {
+        setIsLoggedIn(false);
+        setResults([]);
+        localStorage.removeItem('kis_appkey');
+        localStorage.removeItem('kis_appsecret');
+        localStorage.removeItem('kis_save_keys');
+        setAppKey('');
+        setAppSecret('');
+        setSaveKeys(false);
+      };
+
+      // 스크리닝 실행
+      const runScreening = async () => {
+        setLoading(true);
+        setError(null);
+        setProgress('데이터 조회 중...');
+
+        const priceMin = priceTab === 'low' ? '10' : '1000';
+        const priceMax = priceTab === 'low' ? '999' : '9999';
+
+        try {
+          // 1. 거래량 상위 조회
+          setProgress('거래량 상위 종목 조회 중...');
+          const volumeRes = await fetch(`${API_BASE}/volume-rank`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ appKey, appSecret, priceMin, priceMax })
+          });
+          const volumeData = await volumeRes.json();
+
+          // 2. 등락률 상위 조회
+          setProgress('등락률 상위 종목 조회 중...');
+          const changeRes = await fetch(`${API_BASE}/change-rank`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ appKey, appSecret, priceMin, priceMax, isUp: true })
+          });
+          const changeData = await changeRes.json();
+
+          if (!volumeData.success && !changeData.success) {
+            throw new Error('데이터 조회 실패');
+          }
+
+          // 두 결과 합쳐서 중복 제거
+          const stockMap = new Map();
+          
+          [...(volumeData.data || []), ...(changeData.data || [])].forEach(stock => {
+            const code = stock.mksc_shrn_iscd || stock.stck_shrn_iscd;
+            if (code && !stockMap.has(code)) {
+              stockMap.set(code, stock);
+            }
+          });
+
+          // 상위 10개 선택
+          const topStocks = Array.from(stockMap.values()).slice(0, 10);
+
+          // 3. 각 종목 상세 분석
+          setProgress('기술적 분석 중...');
+          const detailedStocks = [];
+
+          for (let i = 0; i < topStocks.length; i++) {
+            const stock = topStocks[i];
+            const code = stock.mksc_shrn_iscd || stock.stck_shrn_iscd;
+            
+            setProgress(`분석 중... (${i + 1}/${topStocks.length}) ${stock.hts_kor_isnm}`);
+            
+            await new Promise(r => setTimeout(r, 300));
+
+            try {
+              const chartRes = await fetch(`${API_BASE}/daily-chart`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ appKey, appSecret, stockCode: code })
+              });
+              const chartData = await chartRes.json();
+              
+              const prices = (chartData.data || [])
+                .map(d => parseInt(d.stck_clpr))
+                .filter(p => p > 0);
+              
+              const rsi = calculateRSI(prices);
+              const maStatus = getMAStatus(prices);
+              const changeRate = parseFloat(stock.prdy_ctrt) || 0;
+              const volume = parseInt(stock.acml_vol) || 0;
+              const signal = getSignal(rsi, maStatus, changeRate);
+              const strategy = getStrategy(rsi, maStatus, changeRate, volume);
+
+              detailedStocks.push({
+                code,
+                name: stock.hts_kor_isnm,
+                price: parseInt(stock.stck_prpr) || 0,
+                change: changeRate,
+                volume,
+                volFormatted: formatVolume(volume),
+                rsi,
+                maStatus,
+                signal,
+                strategy,
+                high52: parseInt(stock.w52_hgpr) || 0,
+                low52: parseInt(stock.w52_lwpr) || 0,
+                per: stock.per || '-',
+                pbr: stock.pbr || '-'
+              });
+            } catch (err) {
+              detailedStocks.push({
+                code,
+                name: stock.hts_kor_isnm,
+                price: parseInt(stock.stck_prpr) || 0,
+                change: parseFloat(stock.prdy_ctrt) || 0,
+                volume: parseInt(stock.acml_vol) || 0,
+                volFormatted: formatVolume(parseInt(stock.acml_vol) || 0),
+                rsi: 50,
+                maStatus: '조회실패',
+                signal: 'HOLD',
+                strategy: '분석필요',
+                high52: 0,
+                low52: 0,
+                per: '-',
+                pbr: '-'
+              });
+            }
+          }
+
+          // 정렬
+          const sorted = activeTab === 'day'
+            ? detailedStocks.sort((a, b) => {
+                const scoreA = a.change * 2 + (a.volume / 1000000);
+                const scoreB = b.change * 2 + (b.volume / 1000000);
+                return scoreB - scoreA;
+              })
+            : detailedStocks.sort((a, b) => {
+                const maScore = { '정배열': 3, '60일지지': 2, '20일지지': 1, '혼조': 0, '역배열': -1, '데이터부족': 0, '조회실패': 0 };
+                const scoreA = (maScore[a.maStatus] || 0) * 10 + (70 - Math.abs(a.rsi - 50));
+                const scoreB = (maScore[b.maStatus] || 0) * 10 + (70 - Math.abs(b.rsi - 50));
+                return scoreB - scoreA;
+              });
+
+          setResults(sorted.slice(0, 5));
+          setLastUpdate(new Date().toLocaleString('ko-KR'));
+          setProgress('');
+        } catch (err) {
+          setError(`스크리닝 실패: ${err.message}`);
+        } finally {
+          setLoading(false);
+          setProgress('');
+        }
+      };
+
+      const formatVolume = (vol) => {
+        if (vol >= 1000000) return `${(vol / 1000000).toFixed(1)}M`;
+        if (vol >= 1000) return `${(vol / 1000).toFixed(0)}K`;
+        return vol.toString();
+      };
+
+      const SignalBadge = ({ signal }) => (
+        <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+          signal === 'BUY' ? 'bg-green-500 text-white' : 
+          signal === 'SELL' ? 'bg-red-500 text-white' : 'bg-yellow-500 text-black'
+        }`}>
+          {signal === 'BUY' ? '매수' : signal === 'SELL' ? '매도' : '관망'}
+        </span>
+      );
+
+      const RsiBar = ({ value }) => (
+        <div className="w-full bg-gray-600 rounded-full h-3 mt-1">
+          <div 
+            className={`h-3 rounded-full transition-all ${value > 70 ? 'bg-red-500' : value < 30 ? 'bg-blue-500' : 'bg-green-500'}`}
+            style={{ width: `${value}%` }}
+          />
+        </div>
+      );
+
+      // 로그인 화면
+      if (!isLoggedIn) {
+        return (
+          <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center p-4">
+            <div className="max-w-md w-full">
+              <div className="bg-gray-800 rounded-2xl p-6 shadow-xl">
+                <h1 className="text-2xl font-bold mb-2 text-center">🇰🇷 주식 스크리너</h1>
+                <p className="text-gray-400 text-sm text-center mb-6">한국투자증권 KIS API</p>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">APP KEY</label>
+                    <input
+                      type="text"
+                      value={appKey}
+                      onChange={(e) => setAppKey(e.target.value)}
+                      className="w-full bg-gray-700 rounded-xl px-4 py-3 text-white text-lg"
+                      placeholder="APP KEY 입력"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">APP SECRET</label>
+                    <input
+                      type="password"
+                      value={appSecret}
+                      onChange={(e) => setAppSecret(e.target.value)}
+                      className="w-full bg-gray-700 rounded-xl px-4 py-3 text-white text-lg"
+                      placeholder="APP SECRET 입력"
+                    />
+                  </div>
+
+                  {error && (
+                    <div className="bg-red-900/50 border border-red-500 rounded-xl p-3 text-red-300 text-sm">
+                      {error}
+                    </div>
+                  )}
+
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={saveKeys}
+                      onChange={(e) => setSaveKeys(e.target.checked)}
+                      className="w-5 h-5 rounded bg-gray-700 border-gray-600 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span className="text-gray-300">🔐 API 키 저장 (자동 로그인)</span>
+                  </label>
+
+                  <button
+                    onClick={handleLogin}
+                    disabled={loading}
+                    className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 py-4 rounded-xl font-bold text-lg transition"
+                  >
+                    {loading ? '연결 중...' : '🔗 로그인'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // 메인 화면
+      return (
+        <div className="min-h-screen bg-gray-900 text-white pb-safe">
+          <div className="max-w-lg mx-auto p-4">
+            {/* 헤더 */}
+            <div className="bg-gradient-to-r from-blue-700 to-purple-700 rounded-2xl p-4 mb-4 shadow-lg">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h1 className="text-xl font-bold">🇰🇷 주식 스크리너</h1>
+                  {lastUpdate && (
+                    <p className="text-xs text-gray-300 mt-1">{lastUpdate}</p>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={runScreening} 
+                    disabled={loading}
+                    className="bg-white text-purple-800 px-4 py-2 rounded-xl font-bold active:bg-gray-200 disabled:opacity-50"
+                  >
+                    {loading ? '⏳' : '🔍'}
+                  </button>
+                  <button 
+                    onClick={handleLogout}
+                    className="bg-gray-700/50 px-3 py-2 rounded-xl active:bg-gray-600"
+                  >
+                    🚪
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* 에러 메시지 */}
+            {error && (
+              <div className="bg-red-900/50 border border-red-500 rounded-xl p-3 mb-4 text-red-300 text-sm">
+                {error}
+              </div>
+            )}
+
+            {/* 매매 유형 탭 */}
+            <div className="flex gap-2 mb-3">
+              <button 
+                onClick={() => setActiveTab('day')} 
+                className={`flex-1 py-3 rounded-xl font-bold transition ${activeTab === 'day' ? 'bg-orange-500' : 'bg-gray-800 active:bg-gray-700'}`}
+              >
+                🔥 데이트레이딩
+              </button>
+              <button 
+                onClick={() => setActiveTab('swing')} 
+                className={`flex-1 py-3 rounded-xl font-bold transition ${activeTab === 'swing' ? 'bg-purple-500' : 'bg-gray-800 active:bg-gray-700'}`}
+              >
+                📊 스윙매매
+              </button>
+            </div>
+
+            {/* 가격대 탭 */}
+            <div className="flex gap-2 mb-4">
+              <button 
+                onClick={() => setPriceTab('low')} 
+                className={`flex-1 py-2 rounded-xl font-bold text-sm transition ${priceTab === 'low' ? 'bg-green-600' : 'bg-gray-800 active:bg-gray-700'}`}
+              >
+                🪙 동전주
+              </button>
+              <button 
+                onClick={() => setPriceTab('mid')} 
+                className={`flex-1 py-2 rounded-xl font-bold text-sm transition ${priceTab === 'mid' ? 'bg-blue-600' : 'bg-gray-800 active:bg-gray-700'}`}
+              >
+                💵 중가주
+              </button>
+            </div>
+
+            {/* 결과 */}
+            {results.length > 0 && !loading && (
+              <div className="space-y-3">
+                {results.map((stock, idx) => (
+                  <div 
+                    key={stock.code} 
+                    onClick={() => setSelectedStock(selectedStock?.code === stock.code ? null : stock)}
+                    className="bg-gray-800 rounded-2xl p-4 active:bg-gray-750 transition border border-gray-700"
+                  >
+                    {/* 상단 정보 */}
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl font-bold text-yellow-500">#{idx + 1}</span>
+                        <div>
+                          <div className="font-bold text-lg">{stock.name}</div>
+                          <div className="text-gray-400 text-sm">{stock.code}</div>
+                        </div>
+                      </div>
+                      <SignalBadge signal={stock.signal} />
+                    </div>
+
+                    {/* 가격 정보 */}
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div className="bg-gray-700/50 rounded-xl p-3">
+                        <div className="text-gray-400 text-xs">현재가</div>
+                        <div className="font-bold text-xl">{stock.price.toLocaleString()}원</div>
+                      </div>
+                      <div className="bg-gray-700/50 rounded-xl p-3">
+                        <div className="text-gray-400 text-xs">등락률</div>
+                        <div className={`font-bold text-xl ${stock.change >= 0 ? 'text-red-400' : 'text-blue-400'}`}>
+                          {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)}%
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div className="bg-gray-700/50 rounded-xl p-3">
+                        <div className="text-gray-400 text-xs">거래량</div>
+                        <div className="font-bold">{stock.volFormatted}</div>
+                      </div>
+                      <div className="bg-gray-700/50 rounded-xl p-3">
+                        <div className="text-gray-400 text-xs">이평선</div>
+                        <div className={`font-bold ${
+                          stock.maStatus === '정배열' ? 'text-green-400' :
+                          stock.maStatus === '역배열' ? 'text-red-400' : 'text-purple-400'
+                        }`}>{stock.maStatus}</div>
+                      </div>
+                    </div>
+
+                    {/* RSI */}
+                    <div className="mb-3">
+                      <div className="flex justify-between text-sm text-gray-400 mb-1">
+                        <span>RSI (14)</span>
+                        <span className={stock.rsi > 70 ? 'text-red-400' : stock.rsi < 30 ? 'text-blue-400' : 'text-green-400'}>
+                          {stock.rsi}
+                        </span>
+                      </div>
+                      <RsiBar value={stock.rsi} />
+                    </div>
+
+                    {/* 전략 태그 */}
+                    <div className="flex gap-2 flex-wrap">
+                      <span className="bg-blue-900/50 text-blue-300 px-3 py-1 rounded-full text-sm">
+                        📌 {stock.strategy}
+                      </span>
+                    </div>
+
+                    {/* 상세 정보 */}
+                    {selectedStock?.code === stock.code && (
+                      <div className="mt-4 pt-4 border-t border-gray-700">
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                          <div className="bg-gray-700/30 rounded-lg p-2">
+                            <span className="text-gray-400">52주 최고</span>
+                            <div className="text-red-400 font-bold">{stock.high52.toLocaleString()}원</div>
+                          </div>
+                          <div className="bg-gray-700/30 rounded-lg p-2">
+                            <span className="text-gray-400">52주 최저</span>
+                            <div className="text-blue-400 font-bold">{stock.low52.toLocaleString()}원</div>
+                          </div>
+                        </div>
+                        
+                        <div className="mt-3 p-3 bg-yellow-900/30 rounded-xl text-sm">
+                          <p className="text-yellow-400 font-bold mb-1">💡 분석</p>
+                          <p className="text-gray-300 text-xs">
+                            {stock.signal === 'BUY' && '매수 신호 - '}
+                            {stock.signal === 'SELL' && '매도 신호 - '}
+                            {stock.signal === 'HOLD' && '관망 권장 - '}
+                            {stock.maStatus === '정배열' && '상승추세. '}
+                            {stock.maStatus === '역배열' && '하락추세. '}
+                            {stock.rsi > 70 && 'RSI 과매수 주의. '}
+                            {stock.rsi < 30 && 'RSI 과매도 반등 기대. '}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="text-center text-xs text-gray-500 mt-3">
+                      {selectedStock?.code === stock.code ? '▲ 접기' : '▼ 상세보기'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 초기 화면 */}
+            {results.length === 0 && !loading && (
+              <div className="text-center py-16">
+                <div className="text-6xl mb-4">📈</div>
+                <p className="text-xl text-gray-400 mb-2">스크리닝 버튼을 눌러주세요</p>
+                <p className="text-sm text-gray-500">🔍 버튼을 터치하면 분석 시작</p>
+              </div>
+            )}
+
+            {/* 로딩 */}
+            {loading && (
+              <div className="text-center py-16">
+                <div className="text-6xl mb-4 animate-bounce">🔍</div>
+                <p className="text-xl text-gray-400">분석 중...</p>
+                <p className="text-sm text-yellow-400 mt-2">{progress}</p>
+              </div>
+            )}
+
+            {/* 하단 정보 */}
+            <div className="mt-6 p-4 bg-gray-800 rounded-2xl text-xs text-gray-500">
+              <p>⚠️ 투자 참고용 정보입니다</p>
+              <p className="mt-1">📊 RSI, 이동평균선 기반 자동 분석</p>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
