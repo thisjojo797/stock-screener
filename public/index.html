@@ -3,586 +3,353 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>주식 스크리너</title>
+  <title>주식 스크리너 Pro</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="manifest" href="/manifest.json">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <meta name="theme-color" content="#1f2937">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="apple-touch-icon" href="/icon-192.png">
   <style>
-    * { -webkit-tap-highlight-color: transparent; }
-    body { margin: 0; padding: 0; overscroll-behavior: none; }
+    *{-webkit-tap-highlight-color:transparent}body{margin:0;padding:0;overscroll-behavior:none}
+    body.light{background:#f3f4f6;color:#1f2937}
+    body.light .dark-bg{background:#fff!important}
+    body.light .dark-text{color:#1f2937!important}
   </style>
 </head>
-<body>
-  <div id="root"></div>
-  
-  <script type="text/babel">
-    const { useState, useEffect } = React;
+<body class="bg-gray-900 text-white">
+<div id="root"></div>
+<script type="text/babel">
+const{useState,useEffect,useRef}=React;
+const API=window.location.origin+'/api';
 
-    // 서버 주소 자동 감지
-    const API_BASE = window.location.origin + '/api';
+const calcRSI=(p,n=14)=>{if(p.length<n+1)return 50;let g=0,l=0;for(let i=1;i<=n;i++){const c=p[i-1]-p[i];c>0?g+=c:l-=c}return l===0?100:Math.round(100-(100/(1+(g/n)/(l/n))))};
+const calcMACD=(p)=>{if(p.length<26)return{cross:'none'};const ema=(d,n)=>{let e=d.slice(0,n).reduce((a,b)=>a+b)/n;for(let i=n;i<d.length;i++)e=d[i]*(2/(n+1))+e*(1-2/(n+1));return e};const m=ema(p,12)-ema(p,26);return{cross:m>0?'golden':'dead',val:m.toFixed(0)}};
+const calcBB=(p,n=20)=>{if(p.length<n)return{pos:'mid'};const s=p.slice(0,n),avg=s.reduce((a,b)=>a+b)/n,std=Math.sqrt(s.reduce((x,v)=>x+Math.pow(v-avg,2),0)/n);return{pos:p[0]>=avg+std*2?'high':p[0]<=avg-std*2?'low':'mid',u:avg+std*2,l:avg-std*2}};
+const calcVol=(v)=>{if(v.length<20)return{r:1,s:'보통'};const avg=v.slice(0,20).reduce((a,b)=>a+b)/20,r=v[0]/avg;return{r:r.toFixed(1),s:r>=3?'폭증':r>=2?'급증':r>=1.5?'증가':'보통'}};
+const detectCandle=(c)=>{if(c.length<2)return{p:'없음',sig:'n'};const[t,y]=c,b=t.c-t.o,rng=t.h-t.l,ls=Math.min(t.o,t.c)-t.l;if(ls>Math.abs(b)*2)return{p:'망치형',sig:'b'};if(Math.abs(b)<rng*0.1)return{p:'도지',sig:'n'};const yb=y.c-y.o;if(b>0&&yb<0&&Math.abs(b)>Math.abs(yb))return{p:'상승장악',sig:'b'};if(b<0&&yb>0&&Math.abs(b)>Math.abs(yb))return{p:'하락장악',sig:'s'};return{p:'없음',sig:'n'}};
+const getMA=(p)=>{if(p.length<60)return'부족';const m5=p.slice(0,5).reduce((a,b)=>a+b)/5,m20=p.slice(0,20).reduce((a,b)=>a+b)/20,m60=p.slice(0,60).reduce((a,b)=>a+b)/60;if(m5>m20&&m20>m60)return'정배열';if(m5<m20&&m20<m60)return'역배열';return p[0]>m60?'60일↑':p[0]>m20?'20일↑':'혼조'};
+const getSig=(rsi,ma,macd,bb)=>{let s=0;if(rsi<30)s+=2;else if(rsi>70)s-=2;if(ma==='정배열')s+=2;else if(ma==='역배열')s-=2;if(macd?.cross==='golden')s+=1;else if(macd?.cross==='dead')s-=1;if(bb?.pos==='low')s+=1;else if(bb?.pos==='high')s-=1;return s>=3?'BUY':s<=-3?'SELL':'HOLD'};
+const getStrat=(rsi,ma,chg,vol,macd,cnd)=>{if(chg>10&&vol.s==='폭증')return'뉴스매매';if(macd?.cross==='golden')return'MACD골든';if(macd?.cross==='dead')return'MACD데드';if(cnd?.sig==='b')return'캔들('+cnd.p+')';if(ma==='정배열'&&rsi>50&&rsi<70)return'추세매매';if(ma.includes('↑'))return'눌림목';if(rsi<30)return'역발상';return'관망'};
+const fmtVol=(v)=>v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v;
 
-    // RSI 계산
-    const calculateRSI = (prices, period = 14) => {
-      if (prices.length < period + 1) return 50;
-      
-      let gains = 0;
-      let losses = 0;
-      
-      for (let i = 1; i <= period; i++) {
-        const change = prices[i - 1] - prices[i];
-        if (change > 0) gains += change;
-        else losses -= change;
+const Chart_=({data,name,period})=>{
+  const ref=useRef(),chart=useRef();
+  useEffect(()=>{
+    if(!ref.current||!data?.length)return;
+    chart.current?.destroy();
+    let days={w:7,m:30,q:60,y:250}[period]||60;
+    const d=data.slice(0,days),labels=d.map(x=>x.dt).reverse(),prices=d.map(x=>x.c).reverse();
+    const ma5=[],ma20=[];
+    for(let i=0;i<prices.length;i++){ma5.push(i>=4?prices.slice(i-4,i+1).reduce((a,b)=>a+b)/5:null);ma20.push(i>=19?prices.slice(i-19,i+1).reduce((a,b)=>a+b)/20:null)}
+    chart.current=new window.Chart(ref.current,{type:'line',data:{labels,datasets:[
+      {label:'종가',data:prices,borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,0.1)',fill:true,tension:0.1,pointRadius:0,borderWidth:2},
+      {label:'MA5',data:ma5,borderColor:'#f59e0b',borderWidth:1,pointRadius:0,borderDash:[3,3]},
+      {label:'MA20',data:ma20,borderColor:'#ef4444',borderWidth:1,pointRadius:0,borderDash:[3,3]}
+    ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',labels:{color:'#9ca3af',font:{size:9}}}},scales:{x:{ticks:{color:'#6b7280',maxTicksLimit:5,font:{size:8}},grid:{color:'#374151'}},y:{ticks:{color:'#6b7280',font:{size:8}},grid:{color:'#374151'}}}}});
+    return()=>chart.current?.destroy();
+  },[data,period]);
+  return <div className="h-44"><canvas ref={ref}/></div>;
+};
+
+const VolChart=({data,period})=>{
+  const ref=useRef(),chart=useRef();
+  useEffect(()=>{
+    if(!ref.current||!data?.length)return;
+    chart.current?.destroy();
+    let days={w:7,m:30,q:60,y:250}[period]||60;
+    const d=data.slice(0,days),labels=d.map(x=>x.dt).reverse(),vols=d.map(x=>x.v/1e6).reverse(),colors=d.map(x=>x.c>=x.o?'rgba(239,68,68,0.7)':'rgba(59,130,246,0.7)').reverse();
+    chart.current=new window.Chart(ref.current,{type:'bar',data:{labels,datasets:[{data:vols,backgroundColor:colors}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{ticks:{color:'#6b7280',font:{size:7}},grid:{color:'#374151'}}}}});
+    return()=>chart.current?.destroy();
+  },[data,period]);
+  return <div className="h-16"><canvas ref={ref}/></div>;
+};
+
+const App=()=>{
+  const[key,setKey]=useState(localStorage.getItem('k')||'');
+  const[sec,setSec]=useState(localStorage.getItem('s')||'');
+  const[save,setSave]=useState(localStorage.getItem('sv')==='1');
+  const[logged,setLogged]=useState(false);
+  const[tab,setTab]=useState('scan');
+  const[mode,setMode]=useState('day');
+  const[price,setPrice]=useState('low');
+  const[load,setLoad]=useState(false);
+  const[err,setErr]=useState('');
+  const[list,setList]=useState([]);
+  const[sel,setSel]=useState(null);
+  const[upd,setUpd]=useState('');
+  const[prog,setProg]=useState('');
+  const[period,setPeriod]=useState('q');
+  const[favs,setFavs]=useState(()=>JSON.parse(localStorage.getItem('fav')||'[]'));
+  const[port,setPort]=useState(()=>JSON.parse(localStorage.getItem('port')||'[]'));
+  const[alerts,setAlerts]=useState(()=>JSON.parse(localStorage.getItem('alrt')||'[]'));
+  const[alertOn,setAlertOn]=useState(localStorage.getItem('alrtOn')!=='0');
+  const[dark,setDark]=useState(localStorage.getItem('dk')!=='0');
+  const[charts,setCharts]=useState({});
+  const[modal,setModal]=useState(null);
+  const[form,setForm]=useState({});
+  const[search,setSearch]=useState('');
+
+  useEffect(()=>{localStorage.setItem('fav',JSON.stringify(favs))},[favs]);
+  useEffect(()=>{localStorage.setItem('port',JSON.stringify(port))},[port]);
+  useEffect(()=>{localStorage.setItem('alrt',JSON.stringify(alerts))},[alerts]);
+  useEffect(()=>{localStorage.setItem('alrtOn',alertOn?'1':'0')},[alertOn]);
+  useEffect(()=>{localStorage.setItem('dk',dark?'1':'0');document.body.className=dark?'bg-gray-900 text-white':'light bg-gray-100 text-gray-900'},[dark]);
+  useEffect(()=>{if(save&&key&&sec)login()},[]);
+
+  const login=async()=>{
+    if(!key||!sec){setErr('KEY/SECRET 입력');return}
+    setLoad(true);setErr('');
+    try{
+      const r=await fetch(API+'/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appKey:key,appSecret:sec})});
+      if(r.ok){if(save){localStorage.setItem('k',key);localStorage.setItem('s',sec);localStorage.setItem('sv','1')}setLogged(true);if(Notification.permission==='default')Notification.requestPermission()}
+      else{const d=await r.json();setErr(d.error||'실패')}
+    }catch(e){setErr(e.message)}
+    setLoad(false);
+  };
+
+  const logout=()=>{setLogged(false);setList([]);localStorage.removeItem('k');localStorage.removeItem('s');localStorage.removeItem('sv');setKey('');setSec('')};
+
+  const loadChart=async(code)=>{
+    if(charts[code])return charts[code];
+    try{
+      const r=await fetch(API+'/daily-chart',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appKey:key,appSecret:sec,stockCode:code})});
+      const d=await r.json();
+      if(d.success&&d.data){
+        const f=d.data.map(x=>({dt:x.stck_bsop_date.slice(4,6)+'/'+x.stck_bsop_date.slice(6,8),o:+x.stck_oprc,h:+x.stck_hgpr,l:+x.stck_lwpr,c:+x.stck_clpr,v:+x.acml_vol})).filter(x=>x.c>0);
+        setCharts(p=>({...p,[code]:f}));return f;
       }
-      
-      const avgGain = gains / period;
-      const avgLoss = losses / period;
-      
-      if (avgLoss === 0) return 100;
-      const rs = avgGain / avgLoss;
-      return Math.round(100 - (100 / (1 + rs)));
+    }catch{}return[];
+  };
+
+  const analyze=async(code,name,rawData)=>{
+    const ch=rawData||await loadChart(code);
+    const prices=ch.map(x=>x.c),vols=ch.map(x=>x.v),candles=ch.slice(0,3).map(x=>({o:x.o,h:x.h,l:x.l,c:x.c}));
+    const rsi=calcRSI(prices),ma=getMA(prices),macd=calcMACD(prices),bb=calcBB(prices),vol=calcVol(vols),cnd=detectCandle(candles);
+    return{rsi,ma,macd,bb,vol,cnd,sig:getSig(rsi,ma,macd,bb),strat:getStrat(rsi,ma,0,vol,macd,cnd)};
+  };
+
+  const scan=async()=>{
+    setLoad(true);setErr('');setProg('조회중...');
+    const pMin=price==='low'?'10':'1000',pMax=price==='low'?'999':'9999';
+    try{
+      const[vr,cr]=await Promise.all([
+        fetch(API+'/volume-rank',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appKey:key,appSecret:sec,priceMin:pMin,priceMax:pMax})}).then(r=>r.json()),
+        fetch(API+'/change-rank',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appKey:key,appSecret:sec,priceMin:pMin,priceMax:pMax,isUp:true})}).then(r=>r.json())
+      ]);
+      const map=new Map();
+      [...(vr.data||[]),...(cr.data||[])].forEach(s=>{const c=s.mksc_shrn_iscd||s.stck_shrn_iscd;if(c&&!map.has(c))map.set(c,s)});
+      const top=Array.from(map.values()).slice(0,10),result=[];
+      for(let i=0;i<top.length;i++){
+        const s=top[i],code=s.mksc_shrn_iscd||s.stck_shrn_iscd;
+        setProg(`분석중(${i+1}/${top.length}) ${s.hts_kor_isnm}`);
+        await new Promise(r=>setTimeout(r,200));
+        const ch=await loadChart(code),a=await analyze(code,s.hts_kor_isnm,ch);
+        result.push({code,name:s.hts_kor_isnm,price:+s.stck_prpr||0,chg:+s.prdy_ctrt||0,vol:+s.acml_vol||0,h52:+s.w52_hgpr||0,l52:+s.w52_lwpr||0,...a});
+      }
+      const sorted=mode==='day'?result.sort((a,b)=>(b.chg*2+b.vol/1e6)-(a.chg*2+a.vol/1e6)):result.sort((a,b)=>{const sc={정배열:3,'60일↑':2,'20일↑':1};return(sc[b.ma]||0)-(sc[a.ma]||0)});
+      setList(sorted.slice(0,5));setUpd(new Date().toLocaleString('ko-KR'));
+    }catch(e){setErr(e.message)}
+    setLoad(false);setProg('');
+  };
+
+  const refreshFav=async()=>{
+    if(!favs.length)return;setLoad(true);setProg('관심종목 업데이트...');
+    const result=[];
+    for(let i=0;i<favs.length;i++){
+      const f=favs[i];setProg(`조회중(${i+1}/${favs.length}) ${f.name}`);
+      await new Promise(r=>setTimeout(r,200));
+      try{
+        const pr=await fetch(API+'/price',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appKey:key,appSecret:sec,stockCode:f.code})}).then(r=>r.json());
+        const ch=await loadChart(f.code),a=await analyze(f.code,f.name,ch);
+        result.push({...f,price:+pr.data?.stck_prpr||0,chg:+pr.data?.prdy_ctrt||0,vol:+pr.data?.acml_vol||0,h52:+pr.data?.w52_hgpr||0,l52:+pr.data?.w52_lwpr||0,...a});
+      }catch{result.push({...f,err:true})}
+    }
+    setList(result);setUpd(new Date().toLocaleString('ko-KR'));setLoad(false);setProg('');
+  };
+
+  const refreshPort=async()=>{
+    if(!port.length)return;setLoad(true);setProg('포트폴리오 업데이트...');
+    const result=[];
+    for(let i=0;i<port.length;i++){
+      const p=port[i];setProg(`조회중(${i+1}/${port.length}) ${p.name}`);
+      await new Promise(r=>setTimeout(r,200));
+      try{
+        const pr=await fetch(API+'/price',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appKey:key,appSecret:sec,stockCode:p.code})}).then(r=>r.json());
+        const cur=+pr.data?.stck_prpr||0,pnl=((cur-p.buy)/p.buy*100).toFixed(2),amt=(cur-p.buy)*p.qty;
+        result.push({...p,cur,chg:+pr.data?.prdy_ctrt||0,pnl:+pnl,amt,total:cur*p.qty});
+      }catch{result.push({...p,err:true})}
+    }
+    setList(result);setUpd(new Date().toLocaleString('ko-KR'));setLoad(false);setProg('');
+  };
+
+  const searchStock=async()=>{
+    if(!search.trim())return;setLoad(true);setErr('');
+    try{
+      const pr=await fetch(API+'/price',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appKey:key,appSecret:sec,stockCode:search})}).then(r=>r.json());
+      if(pr.success&&pr.data){
+        const ch=await loadChart(search),a=await analyze(search,pr.data.hts_kor_isnm||search,ch);
+        setList([{code:search,name:pr.data.hts_kor_isnm||search,price:+pr.data.stck_prpr||0,chg:+pr.data.prdy_ctrt||0,vol:+pr.data.acml_vol||0,h52:+pr.data.w52_hgpr||0,l52:+pr.data.w52_lwpr||0,...a}]);
+      }else setErr('종목없음. 6자리 코드 입력');
+    }catch(e){setErr(e.message)}
+    setLoad(false);
+  };
+
+  const isFav=(c)=>favs.some(f=>f.code===c);
+  const togFav=(s,e)=>{e?.stopPropagation();setFavs(isFav(s.code)?favs.filter(f=>f.code!==s.code):[...favs,{code:s.code,name:s.name}])};
+  const addPort=(s)=>{setForm({code:s.code,name:s.name,buy:s.price,qty:''});setModal('port')};
+  const savePort=()=>{if(!form.buy||!form.qty)return;const ex=port.findIndex(p=>p.code===form.code);if(ex>=0){const o=port[ex],tq=o.qty+ +form.qty,avg=Math.round((o.buy*o.qty+ +form.buy*+form.qty)/tq);setPort(port.map((p,i)=>i===ex?{...o,buy:avg,qty:tq}:p))}else setPort([...port,{code:form.code,name:form.name,buy:+form.buy,qty:+form.qty}]);setModal(null)};
+  const delPort=(c)=>setPort(port.filter(p=>p.code!==c));
+  const addAlert=(s)=>{setForm({code:s.code,name:s.name,type:'target',val:''});setModal('alert')};
+  const saveAlert=()=>{if(!form.val)return;setAlerts([...alerts,{...form,val:+form.val,on:true}]);setModal(null)};
+  const delAlert=(i)=>setAlerts(alerts.filter((_,j)=>j!==i));
+  const togAlert=(i)=>{const a=[...alerts];a[i].on=!a[i].on;setAlerts(a)};
+
+  // 알림체크
+  useEffect(()=>{
+    if(!alertOn||!logged)return;
+    const chk=async()=>{
+      for(const a of alerts){
+        if(!a.on)continue;
+        try{
+          const r=await fetch(API+'/price',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appKey:key,appSecret:sec,stockCode:a.code})}).then(r=>r.json());
+          const cur=+r.data?.stck_prpr||0,chg=+r.data?.prdy_ctrt||0;
+          let fire=false,msg='';
+          if(a.type==='target'&&cur>=a.val){fire=true;msg=`${a.name} 목표가 ${a.val.toLocaleString()}원 도달!`}
+          else if(a.type==='stop'&&cur<=a.val){fire=true;msg=`${a.name} 손절가 ${a.val.toLocaleString()}원!`}
+          else if(a.type==='surge'&&chg>=a.val){fire=true;msg=`${a.name} +${chg}% 급등!`}
+          else if(a.type==='plunge'&&chg<=-a.val){fire=true;msg=`${a.name} ${chg}% 급락!`}
+          if(fire&&Notification.permission==='granted')new Notification('📈주식알림',{body:msg});
+        }catch{}
+      }
     };
+    const iv=setInterval(chk,60000);return()=>clearInterval(iv);
+  },[alerts,alertOn,logged,key,sec]);
 
-    // 이동평균 상태 판단
-    const getMAStatus = (prices) => {
-      if (prices.length < 60) return '데이터부족';
-      
-      const ma5 = prices.slice(0, 5).reduce((a, b) => a + b, 0) / 5;
-      const ma20 = prices.slice(0, 20).reduce((a, b) => a + b, 0) / 20;
-      const ma60 = prices.slice(0, 60).reduce((a, b) => a + b, 0) / 60;
-      
-      if (ma5 > ma20 && ma20 > ma60) return '정배열';
-      if (ma5 < ma20 && ma20 < ma60) return '역배열';
-      if (prices[0] > ma60) return '60일지지';
-      if (prices[0] > ma20) return '20일지지';
-      return '혼조';
-    };
+  const SigBadge=({s})=><span className={`px-2 py-0.5 rounded-full text-xs font-bold ${s==='BUY'?'bg-green-500 text-white':s==='SELL'?'bg-red-500 text-white':'bg-yellow-500 text-black'}`}>{s==='BUY'?'매수':s==='SELL'?'매도':'관망'}</span>;
 
-    // 매매 신호 판단
-    const getSignal = (rsi, maStatus, changeRate) => {
-      if (rsi > 70) return 'SELL';
-      if (rsi < 30 && maStatus !== '역배열') return 'BUY';
-      if (maStatus === '정배열' && changeRate > 0) return 'BUY';
-      if (maStatus === '역배열' && changeRate < 0) return 'SELL';
-      return 'HOLD';
-    };
-
-    // 전략 추천
-    const getStrategy = (rsi, maStatus, changeRate, volume) => {
-      if (changeRate > 10 && volume > 10000000) return '뉴스매매';
-      if (maStatus === '정배열' && rsi > 50 && rsi < 70) return '추세매매';
-      if (maStatus === '60일지지' || maStatus === '20일지지') return '눌림목매매';
-      if (rsi < 30) return '역발상매매';
-      if (changeRate > 5) return '돌파매매';
-      return '관망';
-    };
-
-    const App = () => {
-      const [appKey, setAppKey] = useState(localStorage.getItem('kis_appkey') || '');
-      const [appSecret, setAppSecret] = useState(localStorage.getItem('kis_appsecret') || '');
-      const [saveKeys, setSaveKeys] = useState(localStorage.getItem('kis_save_keys') === 'true');
-      const [isLoggedIn, setIsLoggedIn] = useState(false);
-      
-      const [activeTab, setActiveTab] = useState('day');
-      const [priceTab, setPriceTab] = useState('low');
-      const [loading, setLoading] = useState(false);
-      const [error, setError] = useState(null);
-      const [results, setResults] = useState([]);
-      const [selectedStock, setSelectedStock] = useState(null);
-      const [lastUpdate, setLastUpdate] = useState(null);
-      const [progress, setProgress] = useState('');
-
-      // 자동 로그인 시도 (저장된 키가 있을 때만)
-      useEffect(() => {
-        if (saveKeys && appKey && appSecret) {
-          handleLogin();
-        }
-      }, []);
-
-      // 로그인 처리
-      const handleLogin = async () => {
-        if (!appKey || !appSecret) {
-          setError('APP KEY와 APP SECRET을 입력해주세요.');
-          return;
-        }
-
-        setLoading(true);
-        setError(null);
-
-        try {
-          const response = await fetch(`${API_BASE}/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ appKey, appSecret })
-          });
-
-          const data = await response.json();
-          
-          if (response.ok) {
-            if (saveKeys) {
-              localStorage.setItem('kis_appkey', appKey);
-              localStorage.setItem('kis_appsecret', appSecret);
-              localStorage.setItem('kis_save_keys', 'true');
-            } else {
-              localStorage.removeItem('kis_appkey');
-              localStorage.removeItem('kis_appsecret');
-              localStorage.removeItem('kis_save_keys');
-            }
-            setIsLoggedIn(true);
-          } else {
-            setError(`로그인 실패: ${data.error}`);
-          }
-        } catch (err) {
-          setError(`서버 연결 실패: ${err.message}`);
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      // 로그아웃
-      const handleLogout = () => {
-        setIsLoggedIn(false);
-        setResults([]);
-        localStorage.removeItem('kis_appkey');
-        localStorage.removeItem('kis_appsecret');
-        localStorage.removeItem('kis_save_keys');
-        setAppKey('');
-        setAppSecret('');
-        setSaveKeys(false);
-      };
-
-      // 스크리닝 실행
-      const runScreening = async () => {
-        setLoading(true);
-        setError(null);
-        setProgress('데이터 조회 중...');
-
-        const priceMin = priceTab === 'low' ? '10' : '1000';
-        const priceMax = priceTab === 'low' ? '999' : '9999';
-
-        try {
-          // 1. 거래량 상위 조회
-          setProgress('거래량 상위 종목 조회 중...');
-          const volumeRes = await fetch(`${API_BASE}/volume-rank`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ appKey, appSecret, priceMin, priceMax })
-          });
-          const volumeData = await volumeRes.json();
-
-          // 2. 등락률 상위 조회
-          setProgress('등락률 상위 종목 조회 중...');
-          const changeRes = await fetch(`${API_BASE}/change-rank`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ appKey, appSecret, priceMin, priceMax, isUp: true })
-          });
-          const changeData = await changeRes.json();
-
-          if (!volumeData.success && !changeData.success) {
-            throw new Error('데이터 조회 실패');
-          }
-
-          // 두 결과 합쳐서 중복 제거
-          const stockMap = new Map();
-          
-          [...(volumeData.data || []), ...(changeData.data || [])].forEach(stock => {
-            const code = stock.mksc_shrn_iscd || stock.stck_shrn_iscd;
-            if (code && !stockMap.has(code)) {
-              stockMap.set(code, stock);
-            }
-          });
-
-          // 상위 10개 선택
-          const topStocks = Array.from(stockMap.values()).slice(0, 10);
-
-          // 3. 각 종목 상세 분석
-          setProgress('기술적 분석 중...');
-          const detailedStocks = [];
-
-          for (let i = 0; i < topStocks.length; i++) {
-            const stock = topStocks[i];
-            const code = stock.mksc_shrn_iscd || stock.stck_shrn_iscd;
-            
-            setProgress(`분석 중... (${i + 1}/${topStocks.length}) ${stock.hts_kor_isnm}`);
-            
-            await new Promise(r => setTimeout(r, 300));
-
-            try {
-              const chartRes = await fetch(`${API_BASE}/daily-chart`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ appKey, appSecret, stockCode: code })
-              });
-              const chartData = await chartRes.json();
-              
-              const prices = (chartData.data || [])
-                .map(d => parseInt(d.stck_clpr))
-                .filter(p => p > 0);
-              
-              const rsi = calculateRSI(prices);
-              const maStatus = getMAStatus(prices);
-              const changeRate = parseFloat(stock.prdy_ctrt) || 0;
-              const volume = parseInt(stock.acml_vol) || 0;
-              const signal = getSignal(rsi, maStatus, changeRate);
-              const strategy = getStrategy(rsi, maStatus, changeRate, volume);
-
-              detailedStocks.push({
-                code,
-                name: stock.hts_kor_isnm,
-                price: parseInt(stock.stck_prpr) || 0,
-                change: changeRate,
-                volume,
-                volFormatted: formatVolume(volume),
-                rsi,
-                maStatus,
-                signal,
-                strategy,
-                high52: parseInt(stock.w52_hgpr) || 0,
-                low52: parseInt(stock.w52_lwpr) || 0,
-                per: stock.per || '-',
-                pbr: stock.pbr || '-'
-              });
-            } catch (err) {
-              detailedStocks.push({
-                code,
-                name: stock.hts_kor_isnm,
-                price: parseInt(stock.stck_prpr) || 0,
-                change: parseFloat(stock.prdy_ctrt) || 0,
-                volume: parseInt(stock.acml_vol) || 0,
-                volFormatted: formatVolume(parseInt(stock.acml_vol) || 0),
-                rsi: 50,
-                maStatus: '조회실패',
-                signal: 'HOLD',
-                strategy: '분석필요',
-                high52: 0,
-                low52: 0,
-                per: '-',
-                pbr: '-'
-              });
-            }
-          }
-
-          // 정렬
-          const sorted = activeTab === 'day'
-            ? detailedStocks.sort((a, b) => {
-                const scoreA = a.change * 2 + (a.volume / 1000000);
-                const scoreB = b.change * 2 + (b.volume / 1000000);
-                return scoreB - scoreA;
-              })
-            : detailedStocks.sort((a, b) => {
-                const maScore = { '정배열': 3, '60일지지': 2, '20일지지': 1, '혼조': 0, '역배열': -1, '데이터부족': 0, '조회실패': 0 };
-                const scoreA = (maScore[a.maStatus] || 0) * 10 + (70 - Math.abs(a.rsi - 50));
-                const scoreB = (maScore[b.maStatus] || 0) * 10 + (70 - Math.abs(b.rsi - 50));
-                return scoreB - scoreA;
-              });
-
-          setResults(sorted.slice(0, 5));
-          setLastUpdate(new Date().toLocaleString('ko-KR'));
-          setProgress('');
-        } catch (err) {
-          setError(`스크리닝 실패: ${err.message}`);
-        } finally {
-          setLoading(false);
-          setProgress('');
-        }
-      };
-
-      const formatVolume = (vol) => {
-        if (vol >= 1000000) return `${(vol / 1000000).toFixed(1)}M`;
-        if (vol >= 1000) return `${(vol / 1000).toFixed(0)}K`;
-        return vol.toString();
-      };
-
-      const SignalBadge = ({ signal }) => (
-        <span className={`px-3 py-1 rounded-full text-sm font-bold ${
-          signal === 'BUY' ? 'bg-green-500 text-white' : 
-          signal === 'SELL' ? 'bg-red-500 text-white' : 'bg-yellow-500 text-black'
-        }`}>
-          {signal === 'BUY' ? '매수' : signal === 'SELL' ? '매도' : '관망'}
-        </span>
-      );
-
-      const RsiBar = ({ value }) => (
-        <div className="w-full bg-gray-600 rounded-full h-3 mt-1">
-          <div 
-            className={`h-3 rounded-full transition-all ${value > 70 ? 'bg-red-500' : value < 30 ? 'bg-blue-500' : 'bg-green-500'}`}
-            style={{ width: `${value}%` }}
-          />
+  const Card=({s,i,rank=true,isPort=false})=>(
+    <div onClick={()=>{setSel(sel?.code===s.code?null:s);if(sel?.code!==s.code)loadChart(s.code)}} className="bg-gray-800 dark-bg rounded-xl p-3 border border-gray-700 mb-2">
+      <div className="flex justify-between items-start mb-2">
+        <div className="flex items-center gap-2">
+          {rank&&<span className="text-lg font-bold text-yellow-500">#{i+1}</span>}
+          <div><div className="font-bold text-sm">{s.name}</div><div className="text-gray-400 text-xs">{s.code}</div></div>
         </div>
-      );
-
-      // 로그인 화면
-      if (!isLoggedIn) {
-        return (
-          <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center p-4">
-            <div className="max-w-md w-full">
-              <div className="bg-gray-800 rounded-2xl p-6 shadow-xl">
-                <h1 className="text-2xl font-bold mb-2 text-center">🇰🇷 주식 스크리너</h1>
-                <p className="text-gray-400 text-sm text-center mb-6">한국투자증권 KIS API</p>
-                
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm text-gray-400 mb-1">APP KEY</label>
-                    <input
-                      type="text"
-                      value={appKey}
-                      onChange={(e) => setAppKey(e.target.value)}
-                      className="w-full bg-gray-700 rounded-xl px-4 py-3 text-white text-lg"
-                      placeholder="APP KEY 입력"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm text-gray-400 mb-1">APP SECRET</label>
-                    <input
-                      type="password"
-                      value={appSecret}
-                      onChange={(e) => setAppSecret(e.target.value)}
-                      className="w-full bg-gray-700 rounded-xl px-4 py-3 text-white text-lg"
-                      placeholder="APP SECRET 입력"
-                    />
-                  </div>
-
-                  {error && (
-                    <div className="bg-red-900/50 border border-red-500 rounded-xl p-3 text-red-300 text-sm">
-                      {error}
-                    </div>
-                  )}
-
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={saveKeys}
-                      onChange={(e) => setSaveKeys(e.target.checked)}
-                      className="w-5 h-5 rounded bg-gray-700 border-gray-600 text-blue-500 focus:ring-blue-500"
-                    />
-                    <span className="text-gray-300">🔐 API 키 저장 (자동 로그인)</span>
-                  </label>
-
-                  <button
-                    onClick={handleLogin}
-                    disabled={loading}
-                    className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 py-4 rounded-xl font-bold text-lg transition"
-                  >
-                    {loading ? '연결 중...' : '🔗 로그인'}
-                  </button>
-                </div>
-              </div>
-            </div>
+        <div className="flex items-center gap-1">
+          <button onClick={e=>togFav(s,e)} className={`text-lg ${isFav(s.code)?'text-yellow-400':'text-gray-500'}`}>{isFav(s.code)?'★':'☆'}</button>
+          <button onClick={e=>{e.stopPropagation();addAlert(s)}} className="text-lg text-gray-500">🔔</button>
+          <button onClick={e=>{e.stopPropagation();addPort(s)}} className="text-lg text-gray-500">💼</button>
+          {s.sig&&<SigBadge s={s.sig}/>}
+        </div>
+      </div>
+      {isPort&&s.cur?(
+        <div className="bg-gray-700/50 rounded-lg p-2 mb-2 text-xs">
+          <div className="grid grid-cols-2 gap-1">
+            <div>매수가: {s.buy?.toLocaleString()}원</div><div>현재가: {s.cur?.toLocaleString()}원</div>
+            <div>수량: {s.qty}주</div><div>평가금: {s.total?.toLocaleString()}원</div>
           </div>
-        );
-      }
-
-      // 메인 화면
-      return (
-        <div className="min-h-screen bg-gray-900 text-white pb-safe">
-          <div className="max-w-lg mx-auto p-4">
-            {/* 헤더 */}
-            <div className="bg-gradient-to-r from-blue-700 to-purple-700 rounded-2xl p-4 mb-4 shadow-lg">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h1 className="text-xl font-bold">🇰🇷 주식 스크리너</h1>
-                  {lastUpdate && (
-                    <p className="text-xs text-gray-300 mt-1">{lastUpdate}</p>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={runScreening} 
-                    disabled={loading}
-                    className="bg-white text-purple-800 px-4 py-2 rounded-xl font-bold active:bg-gray-200 disabled:opacity-50"
-                  >
-                    {loading ? '⏳' : '🔍'}
-                  </button>
-                  <button 
-                    onClick={handleLogout}
-                    className="bg-gray-700/50 px-3 py-2 rounded-xl active:bg-gray-600"
-                  >
-                    🚪
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* 에러 메시지 */}
-            {error && (
-              <div className="bg-red-900/50 border border-red-500 rounded-xl p-3 mb-4 text-red-300 text-sm">
-                {error}
-              </div>
-            )}
-
-            {/* 매매 유형 탭 */}
-            <div className="flex gap-2 mb-3">
-              <button 
-                onClick={() => setActiveTab('day')} 
-                className={`flex-1 py-3 rounded-xl font-bold transition ${activeTab === 'day' ? 'bg-orange-500' : 'bg-gray-800 active:bg-gray-700'}`}
-              >
-                🔥 데이트레이딩
-              </button>
-              <button 
-                onClick={() => setActiveTab('swing')} 
-                className={`flex-1 py-3 rounded-xl font-bold transition ${activeTab === 'swing' ? 'bg-purple-500' : 'bg-gray-800 active:bg-gray-700'}`}
-              >
-                📊 스윙매매
-              </button>
-            </div>
-
-            {/* 가격대 탭 */}
-            <div className="flex gap-2 mb-4">
-              <button 
-                onClick={() => setPriceTab('low')} 
-                className={`flex-1 py-2 rounded-xl font-bold text-sm transition ${priceTab === 'low' ? 'bg-green-600' : 'bg-gray-800 active:bg-gray-700'}`}
-              >
-                🪙 동전주
-              </button>
-              <button 
-                onClick={() => setPriceTab('mid')} 
-                className={`flex-1 py-2 rounded-xl font-bold text-sm transition ${priceTab === 'mid' ? 'bg-blue-600' : 'bg-gray-800 active:bg-gray-700'}`}
-              >
-                💵 중가주
-              </button>
-            </div>
-
-            {/* 결과 */}
-            {results.length > 0 && !loading && (
-              <div className="space-y-3">
-                {results.map((stock, idx) => (
-                  <div 
-                    key={stock.code} 
-                    onClick={() => setSelectedStock(selectedStock?.code === stock.code ? null : stock)}
-                    className="bg-gray-800 rounded-2xl p-4 active:bg-gray-750 transition border border-gray-700"
-                  >
-                    {/* 상단 정보 */}
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl font-bold text-yellow-500">#{idx + 1}</span>
-                        <div>
-                          <div className="font-bold text-lg">{stock.name}</div>
-                          <div className="text-gray-400 text-sm">{stock.code}</div>
-                        </div>
-                      </div>
-                      <SignalBadge signal={stock.signal} />
-                    </div>
-
-                    {/* 가격 정보 */}
-                    <div className="grid grid-cols-2 gap-3 mb-3">
-                      <div className="bg-gray-700/50 rounded-xl p-3">
-                        <div className="text-gray-400 text-xs">현재가</div>
-                        <div className="font-bold text-xl">{stock.price.toLocaleString()}원</div>
-                      </div>
-                      <div className="bg-gray-700/50 rounded-xl p-3">
-                        <div className="text-gray-400 text-xs">등락률</div>
-                        <div className={`font-bold text-xl ${stock.change >= 0 ? 'text-red-400' : 'text-blue-400'}`}>
-                          {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)}%
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3 mb-3">
-                      <div className="bg-gray-700/50 rounded-xl p-3">
-                        <div className="text-gray-400 text-xs">거래량</div>
-                        <div className="font-bold">{stock.volFormatted}</div>
-                      </div>
-                      <div className="bg-gray-700/50 rounded-xl p-3">
-                        <div className="text-gray-400 text-xs">이평선</div>
-                        <div className={`font-bold ${
-                          stock.maStatus === '정배열' ? 'text-green-400' :
-                          stock.maStatus === '역배열' ? 'text-red-400' : 'text-purple-400'
-                        }`}>{stock.maStatus}</div>
-                      </div>
-                    </div>
-
-                    {/* RSI */}
-                    <div className="mb-3">
-                      <div className="flex justify-between text-sm text-gray-400 mb-1">
-                        <span>RSI (14)</span>
-                        <span className={stock.rsi > 70 ? 'text-red-400' : stock.rsi < 30 ? 'text-blue-400' : 'text-green-400'}>
-                          {stock.rsi}
-                        </span>
-                      </div>
-                      <RsiBar value={stock.rsi} />
-                    </div>
-
-                    {/* 전략 태그 */}
-                    <div className="flex gap-2 flex-wrap">
-                      <span className="bg-blue-900/50 text-blue-300 px-3 py-1 rounded-full text-sm">
-                        📌 {stock.strategy}
-                      </span>
-                    </div>
-
-                    {/* 상세 정보 */}
-                    {selectedStock?.code === stock.code && (
-                      <div className="mt-4 pt-4 border-t border-gray-700">
-                        <div className="grid grid-cols-2 gap-3 text-sm">
-                          <div className="bg-gray-700/30 rounded-lg p-2">
-                            <span className="text-gray-400">52주 최고</span>
-                            <div className="text-red-400 font-bold">{stock.high52.toLocaleString()}원</div>
-                          </div>
-                          <div className="bg-gray-700/30 rounded-lg p-2">
-                            <span className="text-gray-400">52주 최저</span>
-                            <div className="text-blue-400 font-bold">{stock.low52.toLocaleString()}원</div>
-                          </div>
-                        </div>
-                        
-                        <div className="mt-3 p-3 bg-yellow-900/30 rounded-xl text-sm">
-                          <p className="text-yellow-400 font-bold mb-1">💡 분석</p>
-                          <p className="text-gray-300 text-xs">
-                            {stock.signal === 'BUY' && '매수 신호 - '}
-                            {stock.signal === 'SELL' && '매도 신호 - '}
-                            {stock.signal === 'HOLD' && '관망 권장 - '}
-                            {stock.maStatus === '정배열' && '상승추세. '}
-                            {stock.maStatus === '역배열' && '하락추세. '}
-                            {stock.rsi > 70 && 'RSI 과매수 주의. '}
-                            {stock.rsi < 30 && 'RSI 과매도 반등 기대. '}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="text-center text-xs text-gray-500 mt-3">
-                      {selectedStock?.code === stock.code ? '▲ 접기' : '▼ 상세보기'}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* 초기 화면 */}
-            {results.length === 0 && !loading && (
-              <div className="text-center py-16">
-                <div className="text-6xl mb-4">📈</div>
-                <p className="text-xl text-gray-400 mb-2">스크리닝 버튼을 눌러주세요</p>
-                <p className="text-sm text-gray-500">🔍 버튼을 터치하면 분석 시작</p>
-              </div>
-            )}
-
-            {/* 로딩 */}
-            {loading && (
-              <div className="text-center py-16">
-                <div className="text-6xl mb-4 animate-bounce">🔍</div>
-                <p className="text-xl text-gray-400">분석 중...</p>
-                <p className="text-sm text-yellow-400 mt-2">{progress}</p>
-              </div>
-            )}
-
-            {/* 하단 정보 */}
-            <div className="mt-6 p-4 bg-gray-800 rounded-2xl text-xs text-gray-500">
-              <p>⚠️ 투자 참고용 정보입니다</p>
-              <p className="mt-1">📊 RSI, 이동평균선 기반 자동 분석</p>
-            </div>
+          <div className={`text-center font-bold mt-1 ${s.pnl>=0?'text-red-400':'text-blue-400'}`}>{s.pnl>=0?'+':''}{s.pnl}% ({s.amt>=0?'+':''}{s.amt?.toLocaleString()}원)</div>
+        </div>
+      ):s.price>0&&(
+        <>
+          <div className="grid grid-cols-2 gap-2 mb-2 text-xs">
+            <div className="bg-gray-700/50 rounded p-2"><div className="text-gray-400">현재가</div><div className="font-bold">{s.price?.toLocaleString()}원</div></div>
+            <div className="bg-gray-700/50 rounded p-2"><div className="text-gray-400">등락률</div><div className={`font-bold ${s.chg>=0?'text-red-400':'text-blue-400'}`}>{s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div></div>
+          </div>
+          <div className="grid grid-cols-4 gap-1 mb-2 text-xs">
+            <div className="bg-gray-700/50 rounded p-1 text-center"><div className="text-gray-400 text-[10px]">RSI</div><div className={`font-bold ${s.rsi>70?'text-red-400':s.rsi<30?'text-blue-400':'text-green-400'}`}>{s.rsi}</div></div>
+            <div className="bg-gray-700/50 rounded p-1 text-center"><div className="text-gray-400 text-[10px]">이평선</div><div className={`font-bold text-[11px] ${s.ma==='정배열'?'text-green-400':s.ma==='역배열'?'text-red-400':'text-purple-400'}`}>{s.ma}</div></div>
+            <div className="bg-gray-700/50 rounded p-1 text-center"><div className="text-gray-400 text-[10px]">MACD</div><div className={`font-bold text-[11px] ${s.macd?.cross==='golden'?'text-green-400':s.macd?.cross==='dead'?'text-red-400':'text-gray-400'}`}>{s.macd?.cross==='golden'?'골든':s.macd?.cross==='dead'?'데드':'중립'}</div></div>
+            <div className="bg-gray-700/50 rounded p-1 text-center"><div className="text-gray-400 text-[10px]">거래량</div><div className={`font-bold text-[11px] ${s.vol?.s==='폭증'?'text-red-400':s.vol?.s==='급증'?'text-orange-400':'text-gray-400'}`}>{s.vol?.s}({s.vol?.r}x)</div></div>
+          </div>
+          <div className="grid grid-cols-2 gap-1 mb-2 text-xs">
+            <div className="bg-gray-700/50 rounded p-1 text-center"><div className="text-gray-400 text-[10px]">볼린저</div><div className={`font-bold text-[11px] ${s.bb?.pos==='high'?'text-red-400':s.bb?.pos==='low'?'text-blue-400':'text-gray-400'}`}>{s.bb?.pos==='high'?'과매수':s.bb?.pos==='low'?'과매도':'중립'}</div></div>
+            <div className="bg-gray-700/50 rounded p-1 text-center"><div className="text-gray-400 text-[10px]">캔들</div><div className={`font-bold text-[11px] ${s.cnd?.sig==='b'?'text-green-400':s.cnd?.sig==='s'?'text-red-400':'text-gray-400'}`}>{s.cnd?.p}</div></div>
+          </div>
+          <div className="flex gap-1"><span className="bg-blue-900/50 text-blue-300 px-2 py-0.5 rounded-full text-[10px]">📌{s.strat}</span></div>
+        </>
+      )}
+      {sel?.code===s.code&&(
+        <div className="mt-2 pt-2 border-t border-gray-700">
+          <div className="flex gap-1 mb-2">{['w','m','q','y'].map(p=><button key={p} onClick={e=>{e.stopPropagation();setPeriod(p)}} className={`px-2 py-0.5 rounded text-[10px] ${period===p?'bg-blue-600':'bg-gray-700'}`}>{p==='w'?'1주':p==='m'?'1월':p==='q'?'3월':'1년'}</button>)}</div>
+          {charts[s.code]?<><Chart_ data={charts[s.code]} name={s.name} period={period}/><VolChart data={charts[s.code]} period={period}/></>:<div className="h-32 flex items-center justify-center text-gray-400 text-sm">차트 로딩...</div>}
+          <div className="grid grid-cols-2 gap-2 text-xs mt-2">
+            <div className="bg-gray-700/30 rounded p-1"><span className="text-gray-400">52주최고</span><div className="text-red-400 font-bold">{s.h52?.toLocaleString()}원</div></div>
+            <div className="bg-gray-700/30 rounded p-1"><span className="text-gray-400">52주최저</span><div className="text-blue-400 font-bold">{s.l52?.toLocaleString()}원</div></div>
           </div>
         </div>
-      );
-    };
+      )}
+      <div className="text-center text-[10px] text-gray-500 mt-1">{sel?.code===s.code?'▲접기':'▼상세+차트'}</div>
+    </div>
+  );
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
-  </script>
+  const PortSum=()=>{
+    if(tab!=='port'||!list.length||!list[0].total)return null;
+    const inv=list.reduce((s,i)=>s+(i.buy||0)*(i.qty||0),0),val=list.reduce((s,i)=>s+(i.total||0),0),pnl=val-inv,rate=inv?(pnl/inv*100).toFixed(2):0;
+    return <div className="bg-gradient-to-r from-green-800 to-blue-800 rounded-xl p-3 mb-3"><div className="text-xs text-gray-300">총 평가금액</div><div className="text-xl font-bold">{val.toLocaleString()}원</div><div className={`${pnl>=0?'text-red-300':'text-blue-300'}`}>{pnl>=0?'+':''}{pnl.toLocaleString()}원 ({pnl>=0?'+':''}{rate}%)</div><div className="text-[10px] text-gray-400">투자원금: {inv.toLocaleString()}원</div></div>;
+  };
+
+  if(!logged)return(
+    <div className={`min-h-screen flex items-center justify-center p-4 ${dark?'bg-gray-900':'bg-gray-100'}`}>
+      <div className={`max-w-sm w-full ${dark?'bg-gray-800':'bg-white'} rounded-2xl p-5 shadow-xl`}>
+        <h1 className="text-xl font-bold text-center mb-1">🇰🇷 주식 스크리너 Pro</h1>
+        <p className="text-gray-400 text-xs text-center mb-4">한국투자증권 KIS API</p>
+        <div className="space-y-3">
+          <input value={key} onChange={e=>setKey(e.target.value)} className={`w-full ${dark?'bg-gray-700':'bg-gray-100'} rounded-lg px-3 py-2`} placeholder="APP KEY"/>
+          <input type="password" value={sec} onChange={e=>setSec(e.target.value)} className={`w-full ${dark?'bg-gray-700':'bg-gray-100'} rounded-lg px-3 py-2`} placeholder="APP SECRET"/>
+          {err&&<div className="text-red-400 text-xs">{err}</div>}
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={save} onChange={e=>setSave(e.target.checked)}/>🔐 키 저장</label>
+          <button onClick={login} disabled={load} className="w-full bg-blue-600 py-3 rounded-lg font-bold disabled:opacity-50">{load?'연결중...':'🔗 로그인'}</button>
+          <button onClick={()=>setDark(!dark)} className="w-full text-gray-400 text-xs py-1">{dark?'☀️ 라이트':'🌙 다크'} 모드</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return(
+    <div className={`min-h-screen ${dark?'bg-gray-900 text-white':'bg-gray-100 text-gray-900'}`}>
+      <div className="max-w-lg mx-auto p-3">
+        <div className="bg-gradient-to-r from-blue-700 to-purple-700 rounded-xl p-3 mb-3">
+          <div className="flex justify-between items-center">
+            <div><h1 className="font-bold text-white">🇰🇷 주식 스크리너 Pro</h1>{upd&&<p className="text-[10px] text-gray-300">{upd}</p>}</div>
+            <button onClick={()=>{if(tab==='scan')scan();else if(tab==='fav')refreshFav();else if(tab==='port')refreshPort();else if(tab==='search')searchStock()}} disabled={load} className="bg-white text-purple-800 px-3 py-1.5 rounded-lg font-bold text-sm disabled:opacity-50">{load?'⏳':'🔍'}</button>
+          </div>
+        </div>
+        {err&&<div className="bg-red-900/50 border border-red-500 rounded-lg p-2 mb-2 text-red-300 text-xs">{err}</div>}
+        <div className="flex gap-1 mb-2 overflow-x-auto text-xs">
+          {[{id:'scan',icon:'🔍',lb:'스크리닝'},{id:'fav',icon:'⭐',lb:`관심(${favs.length})`},{id:'port',icon:'💼',lb:'포트폴리오'},{id:'search',icon:'🔎',lb:'검색'},{id:'alert',icon:'🔔',lb:'알림'},{id:'set',icon:'⚙️',lb:'설정'}].map(t=><button key={t.id} onClick={()=>{setTab(t.id);setList([])}} className={`px-2 py-1.5 rounded-lg font-bold whitespace-nowrap ${tab===t.id?'bg-blue-600':'bg-gray-800'}`}>{t.icon}{t.lb}</button>)}
+        </div>
+        {tab==='scan'&&<>
+          <div className="flex gap-1 mb-2">{[['day','🔥데이','orange'],['swing','📊스윙','purple']].map(([m,l,c])=><button key={m} onClick={()=>setMode(m)} className={`flex-1 py-1.5 rounded-lg font-bold text-xs ${mode===m?`bg-${c}-500`:'bg-gray-800'}`}>{l}</button>)}</div>
+          <div className="flex gap-1 mb-3">{[['low','🪙동전주','green'],['mid','💵중가주','blue']].map(([p,l,c])=><button key={p} onClick={()=>setPrice(p)} className={`flex-1 py-1 rounded-lg font-bold text-xs ${price===p?`bg-${c}-600`:'bg-gray-800'}`}>{l}</button>)}</div>
+        </>}
+        {tab==='search'&&<div className="mb-3"><input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==='Enter'&&searchStock()} className="w-full bg-gray-800 rounded-lg px-3 py-2 text-sm" placeholder="종목코드 6자리 (예:005930)"/><div className="text-[10px] text-gray-500 mt-1">💡 삼성전자:005930, SK하이닉스:000660</div></div>}
+        {tab==='alert'&&<div className="space-y-2">
+          <div className="flex justify-between items-center p-3 bg-gray-800 rounded-lg"><span className="text-sm">🔔 알림 활성화</span><button onClick={()=>setAlertOn(!alertOn)} className={`w-10 h-5 rounded-full ${alertOn?'bg-green-500':'bg-gray-600'}`}><div className={`w-4 h-4 bg-white rounded-full transform transition ${alertOn?'translate-x-5':'translate-x-0.5'}`}/></button></div>
+          {!alerts.length?<div className="text-center py-6 text-gray-500 text-sm">설정된 알림 없음</div>:alerts.map((a,i)=><div key={i} className="p-2 bg-gray-800 rounded-lg flex justify-between items-center text-sm"><div><div className="font-bold">{a.name}</div><div className="text-[10px] text-gray-400">{a.type==='target'?'목표가':a.type==='stop'?'손절가':a.type==='surge'?'급등':'급락'} {a.val.toLocaleString()}{a.type==='target'||a.type==='stop'?'원':'%'}</div></div><div className="flex gap-2"><button onClick={()=>togAlert(i)} className={`w-8 h-4 rounded-full ${a.on?'bg-green-500':'bg-gray-600'}`}><div className={`w-3 h-3 bg-white rounded-full transform ${a.on?'translate-x-4':'translate-x-0.5'}`}/></button><button onClick={()=>delAlert(i)} className="text-red-400">🗑</button></div></div>)}
+        </div>}
+        {tab==='set'&&<div className="space-y-2">
+          <div className="flex justify-between items-center p-3 bg-gray-800 rounded-lg"><span className="text-sm">{dark?'🌙 다크':'☀️ 라이트'} 모드</span><button onClick={()=>setDark(!dark)} className={`w-10 h-5 rounded-full ${dark?'bg-blue-500':'bg-yellow-500'}`}><div className={`w-4 h-4 bg-white rounded-full transform ${dark?'translate-x-5':'translate-x-0.5'}`}/></button></div>
+          <div className="p-3 bg-gray-800 rounded-lg text-sm"><div>관심종목: {favs.length}개</div><div>포트폴리오: {port.length}개</div><div>알림: {alerts.length}개</div><button onClick={()=>{if(confirm('모든 데이터 삭제?')){setFavs([]);setPort([]);setAlerts([]);localStorage.clear()}}} className="mt-2 w-full py-1.5 bg-red-600 rounded text-xs">🗑 전체 삭제</button></div>
+          <button onClick={logout} className="w-full py-2 bg-gray-700 rounded-lg text-sm">🚪 로그아웃</button>
+        </div>}
+        <PortSum/>
+        {list.length>0&&!load&&tab!=='alert'&&tab!=='set'&&<div>{list.map((s,i)=><Card key={s.code} s={s} i={i} rank={tab==='scan'} isPort={tab==='port'}/>)}</div>}
+        {!list.length&&!load&&tab!=='alert'&&tab!=='set'&&<div className="text-center py-10"><div className="text-4xl mb-2">{tab==='scan'?'📈':tab==='fav'?'⭐':tab==='port'?'💼':'🔎'}</div><p className="text-gray-400 text-sm">{tab==='scan'?'🔍버튼으로 스크리닝':tab==='fav'?(favs.length?'🔍버튼으로 업데이트':'관심종목 추가하세요'):tab==='port'?(port.length?'🔍버튼으로 업데이트':'포트폴리오 추가하세요'):'종목코드 검색'}</p>
+          {tab==='fav'&&favs.length>0&&<div className="mt-3 space-y-1">{favs.map(f=><div key={f.code} className="bg-gray-800 rounded p-2 flex justify-between text-sm"><span>{f.name}({f.code})</span><button onClick={()=>togFav(f)} className="text-red-400 text-xs">삭제</button></div>)}</div>}
+          {tab==='port'&&port.length>0&&<div className="mt-3 space-y-1">{port.map(p=><div key={p.code} className="bg-gray-800 rounded p-2 flex justify-between text-sm"><span>{p.name}({p.code}) {p.qty}주</span><button onClick={()=>delPort(p.code)} className="text-red-400 text-xs">삭제</button></div>)}</div>}
+        </div>}
+        {load&&<div className="text-center py-10"><div className="text-4xl animate-bounce">🔍</div><p className="text-gray-400 text-sm mt-2">{prog||'분석중...'}</p></div>}
+        <div className="mt-4 p-2 bg-gray-800 rounded-lg text-[10px] text-gray-500">⚠️투자참고용 | RSI,MACD,볼린저,캔들패턴 자동분석</div>
+      </div>
+      {modal==='port'&&<div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={()=>setModal(null)}><div className="bg-gray-800 rounded-xl p-4 w-full max-w-xs" onClick={e=>e.stopPropagation()}><h3 className="font-bold mb-3">💼 포트폴리오</h3><div className="text-sm mb-2">{form.name}({form.code})</div><input type="number" value={form.buy} onChange={e=>setForm({...form,buy:e.target.value})} className="w-full bg-gray-700 rounded px-3 py-2 mb-2" placeholder="매수가"/><input type="number" value={form.qty} onChange={e=>setForm({...form,qty:e.target.value})} className="w-full bg-gray-700 rounded px-3 py-2 mb-3" placeholder="수량"/><div className="flex gap-2"><button onClick={()=>setModal(null)} className="flex-1 py-2 bg-gray-700 rounded">취소</button><button onClick={savePort} className="flex-1 py-2 bg-blue-600 rounded font-bold">저장</button></div></div></div>}
+      {modal==='alert'&&<div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={()=>setModal(null)}><div className="bg-gray-800 rounded-xl p-4 w-full max-w-xs" onClick={e=>e.stopPropagation()}><h3 className="font-bold mb-3">🔔 알림설정</h3><div className="text-sm mb-2">{form.name}({form.code})</div><select value={form.type} onChange={e=>setForm({...form,type:e.target.value})} className="w-full bg-gray-700 rounded px-3 py-2 mb-2"><option value="target">목표가 도달</option><option value="stop">손절가 도달</option><option value="surge">급등 %이상</option><option value="plunge">급락 %이상</option></select><input type="number" value={form.val} onChange={e=>setForm({...form,val:e.target.value})} className="w-full bg-gray-700 rounded px-3 py-2 mb-3" placeholder={form.type==='target'||form.type==='stop'?'가격(원)':'변동률(%)'}/><div className="flex gap-2"><button onClick={()=>setModal(null)} className="flex-1 py-2 bg-gray-700 rounded">취소</button><button onClick={saveAlert} className="flex-1 py-2 bg-blue-600 rounded font-bold">저장</button></div></div></div>}
+    </div>
+  );
+};
+const root=ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App/>);
+</script>
 </body>
 </html>
